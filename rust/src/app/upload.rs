@@ -3,7 +3,9 @@
 use super::cover::CoverPicker;
 use super::maps::install_package_as_map;
 use super::KaraokeMachineApp;
+use crate::automap;
 use crate::jobs::{Job, StreamJob};
+use crate::library::{maps_dir, save_map_file};
 use crate::map_package::MapPackage;
 use crate::model::{format_time, Song};
 use crate::theme::{alpha, GOLD, MINT, MUTED, MUTED2, PINK};
@@ -72,6 +74,10 @@ pub(super) struct UploadState {
     pub(super) artist_search: String,
     pub(super) album_search: String,
     pub(super) pending_map: Option<MapPackage>,
+    /// Make the imported song playable from its suggestions instead of opening the editor.
+    pub(super) auto_map: bool,
+    /// Show the artist and album bio fields, which most imports do not need.
+    pub(super) show_bios: bool,
     pub(super) fetch: Option<Job<TrackInfo>>,
     pub(super) import: Option<StreamJob<ImportMessage>>,
 }
@@ -278,8 +284,20 @@ impl KaraokeMachineApp {
                     } else {
                         self.reload_library(ctx, now);
                         if let Some(index) = self.songs.iter().position(|song| song.id == id) {
-                            self.open_map_picker(index, super::MapPickerMode::Edit, now);
-                            self.toast("Song prepared. Choose a map file to edit.", now);
+                            // An editor opened during the import keeps its
+                            // unsaved draft: the song waits in the library.
+                            let editing = self.editor.is_some();
+                            if self.upload.auto_map {
+                                self.auto_map_imported(index, editing, now);
+                            } else if editing {
+                                self.toast(
+                                    "Song prepared. Find it in the library when you finish editing.",
+                                    now,
+                                );
+                            } else {
+                                self.open_map_picker(index, super::MapPickerMode::Edit, now);
+                                self.toast("Song prepared. Choose a map file to edit.", now);
+                            }
                         } else {
                             self.toast("Song imported, but it was not found after reload.", now);
                         }
@@ -291,6 +309,48 @@ impl KaraokeMachineApp {
                 None => {
                     self.upload.message = "The import ended without reporting a result.".into();
                 }
+            }
+        }
+    }
+
+    /// Map a freshly imported song from its suggestions into a finished level
+    /// file and open it on the stage; fall back to the map picker when there
+    /// is nothing to map from. While another song is being edited, only the
+    /// file is written and the song waits in the library.
+    fn auto_map_imported(&mut self, index: usize, editing: bool, now: f64) {
+        let Some(song) = self.songs.get(index).cloned() else {
+            return;
+        };
+        let result = automap::auto_mapped_level(&song).and_then(|(level, summary)| {
+            let path = maps_dir(&self.root, &song.id)
+                .join(format!("{}.json", automap::AUTO_MAP_FILE_STEM));
+            save_map_file(&path, &level).map(|()| summary)
+        });
+        match result {
+            Ok(summary) => {
+                self.refresh_song_maps(index);
+                if editing {
+                    self.toast(
+                        format!("{summary} Find it in the library when you finish editing."),
+                        now,
+                    );
+                } else {
+                    self.open_song(index, now);
+                    self.toast(
+                        format!("{summary} Open EDIT in the library to fix anything."),
+                        now,
+                    );
+                }
+            }
+            Err(error) if editing => {
+                self.toast(
+                    format!("Not auto-mapped: {error} The song is in the library."),
+                    now,
+                );
+            }
+            Err(error) => {
+                self.open_map_picker(index, super::MapPickerMode::Edit, now);
+                self.toast(format!("Not auto-mapped: {error}"), now);
             }
         }
     }
@@ -496,16 +556,20 @@ impl KaraokeMachineApp {
         self.upload.cover.update_preview(ctx);
         {
             let upload = &mut self.upload;
+            // The form is taller than the 700 pt minimum window; size it from
+            // the screen and keep the checkbox and IMPORT button below the
+            // scrolling part reachable.
+            let window_h = (ctx.screen_rect().height() - 60.0).min(850.0);
             egui::Window::new("Upload a song")
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
-                .fixed_size(Vec2::new(930.0, 850.0))
+                .fixed_size(Vec2::new(930.0, window_h))
                 .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
                 .show(ctx, |ui| {
                     ui.set_min_width(890.0);
                     ui.spacing_mut().interact_size.y = 28.0;
-                    egui::ScrollArea::vertical().max_height(700.0).show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(window_h - 150.0).show(ui, |ui| {
                         ui.label(
                             RichText::new("Paste a YouTube, Spotify or SoundCloud link. Fetch fills in whatever it can; every field remains editable.")
                                 .size(11.0)
@@ -513,7 +577,7 @@ impl KaraokeMachineApp {
                         );
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("LINK").monospace().size(8.0).color(MUTED2));
+                            ui.label(RichText::new("LINK").monospace().size(10.0).color(MUTED2));
                             let link = ui.add(
                                 egui::TextEdit::singleline(&mut upload.url)
                                     .desired_width(640.0),
@@ -616,7 +680,7 @@ impl KaraokeMachineApp {
                                 });
                         }
                         ui.add_space(10.0);
-                        ui.label(RichText::new("EXISTING METADATA").monospace().size(8.0).color(MUTED2));
+                        ui.label(RichText::new("EXISTING METADATA").monospace().size(10.0).color(MUTED2));
                         ui.horizontal(|ui| {
                             let combo_width = 400.0;
                             let artist_label = if upload.artist.trim().is_empty() {
@@ -710,6 +774,9 @@ impl KaraokeMachineApp {
                                 });
                         });
                         ui.add_space(10.0);
+                        let bios_open = upload.show_bios
+                            || !upload.artist_bio.trim().is_empty()
+                            || !upload.album_bio.trim().is_empty();
                         egui::Grid::new("upload_metadata_grid")
                             .num_columns(2)
                             .spacing([12.0, 6.0])
@@ -732,18 +799,23 @@ impl KaraokeMachineApp {
                                     paint_placeholder(ui, release.rect, "YYYY-MM-DD", false);
                                 }
                                 ui.end_row();
-                                ui.label("Artist bio");
-                                ui.add(egui::TextEdit::multiline(&mut upload.artist_bio).desired_rows(2).desired_width(680.0));
-                                ui.end_row();
-                                ui.label("Album bio");
-                                ui.add(egui::TextEdit::multiline(&mut upload.album_bio).desired_rows(2).desired_width(680.0));
-                                ui.end_row();
+                                if bios_open {
+                                    ui.label("Artist bio");
+                                    ui.add(egui::TextEdit::multiline(&mut upload.artist_bio).desired_rows(2).desired_width(680.0));
+                                    ui.end_row();
+                                    ui.label("Album bio");
+                                    ui.add(egui::TextEdit::multiline(&mut upload.album_bio).desired_rows(2).desired_width(680.0));
+                                    ui.end_row();
+                                }
                             });
+                        if !bios_open && ui.small_button("Add artist and album bios").clicked() {
+                            upload.show_bios = true;
+                        }
                         ui.add_space(10.0);
                         upload.cover.draw_tile(ui);
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new("LYRICS").monospace().size(8.0).color(MUTED2));
+                            ui.label(RichText::new("LYRICS").monospace().size(10.0).color(MUTED2));
                             if let Some(provider) = &upload.lyrics_provider {
                                 ui.label(
                                     RichText::new(format!(
@@ -792,8 +864,17 @@ impl KaraokeMachineApp {
                                 .color(MUTED),
                         );
                     } else {
-                        let button = egui::Button::new("DOWNLOAD, SPLIT & OPEN EDITOR")
-                            .min_size(Vec2::new(ui.available_width(), 36.0));
+                        ui.checkbox(
+                            &mut upload.auto_map,
+                            "Make it playable right away (auto-map from the detected melody)",
+                        );
+                        let label = if upload.auto_map {
+                            "IMPORT & AUTO-MAP"
+                        } else {
+                            "IMPORT & OPEN EDITOR"
+                        };
+                        let button =
+                            egui::Button::new(label).min_size(Vec2::new(ui.available_width(), 36.0));
                         if ui
                             .add_enabled(!upload.url.trim().is_empty(), button)
                             .clicked()
@@ -802,7 +883,7 @@ impl KaraokeMachineApp {
                         }
                         ui.label(
                             RichText::new("Requires Node, yt-dlp, ffmpeg and Demucs. The repo .venv is detected automatically.")
-                                .size(9.0)
+                                .size(10.0)
                                 .color(MUTED2),
                         );
                     }

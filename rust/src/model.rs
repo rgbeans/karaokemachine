@@ -32,8 +32,9 @@ pub fn pitch_color(t: f32) -> [u8; 3] {
 }
 
 pub fn note_name(midi: i32) -> String {
+    // ASCII sharps: the bundled UI font has no U+266F glyph and drew boxes.
     const NAMES: [&str; 12] = [
-        "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B",
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
     ];
     let n = midi.rem_euclid(12);
     format!("{}{}", NAMES[n as usize], midi / 12 - 1)
@@ -402,6 +403,10 @@ pub struct Settings {
     pub vocal_high: Option<i32>,
     #[serde(default)]
     pub octave_shift: i32,
+    /// Id of the last song opened on the stage, for the home screen's
+    /// "continue" card.
+    #[serde(default)]
+    pub last_song: Option<String>,
 }
 
 fn default_input_gain() -> f32 {
@@ -436,6 +441,7 @@ impl Default for Settings {
             vocal_low: None,
             vocal_high: None,
             octave_shift: 0,
+            last_song: None,
         }
     }
 }
@@ -447,7 +453,47 @@ pub struct ScoreRecord {
     pub combo: u32,
 }
 
+impl ScoreRecord {
+    /// Accuracy first, then score: the rank letter is what singers chase,
+    /// and score alone would let a short scale outrank a full song.
+    pub fn beats(&self, other: &ScoreRecord) -> bool {
+        match self.accuracy.partial_cmp(&other.accuracy) {
+            Some(std::cmp::Ordering::Greater) => true,
+            Some(std::cmp::Ordering::Equal) => self.score > other.score,
+            _ => false,
+        }
+    }
+}
+
 pub type Scores = BTreeMap<String, ScoreRecord>;
+
+/// Accuracy for display next to a rank letter or a "+N% TO A" nudge. Floored,
+/// never rounded, so 91.6% can't read "92%" beside an A.
+pub fn accuracy_label(accuracy: f32) -> String {
+    format!("{}%", accuracy.floor())
+}
+
+/// Rank thresholds in pitch-accuracy percent, best first; below the last is D.
+pub const RANK_THRESHOLDS: [(char, f32); 4] = [('S', 92.0), ('A', 82.0), ('B', 70.0), ('C', 55.0)];
+
+/// Letter rank for a pitch accuracy percentage, as shown on the results card.
+pub fn rank_for(accuracy: f32) -> char {
+    RANK_THRESHOLDS
+        .iter()
+        .find(|(_, min)| accuracy >= *min)
+        .map(|(rank, _)| *rank)
+        .unwrap_or('D')
+}
+
+/// The next rank up and the whole accuracy points still needed for it
+/// (at least 1, so a near miss never reads "+0%"). `None` at the top.
+pub fn next_rank(accuracy: f32) -> Option<(char, f32)> {
+    RANK_THRESHOLDS
+        .iter()
+        .rev()
+        .find(|(_, min)| accuracy < *min)
+        .map(|(rank, min)| (*rank, (min - accuracy).ceil().max(1.0)))
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct Album {
@@ -456,4 +502,140 @@ pub struct Album {
     pub cover_path: Option<std::path::PathBuf>,
     pub warmup: bool,
     pub songs: Vec<usize>,
+}
+
+/// The pitch lane the editor shows and the stage lays words out against: a
+/// little around `midis`, at least two octaves tall and centred, `fallback`
+/// when there are no notes. Word labels are placed as a fraction of this
+/// lane, so everything that paints them must use the same formula.
+pub fn lane_range(midis: &[i32], fallback: (i32, i32)) -> (i32, i32) {
+    let mut low = fallback.0.max(0);
+    let mut high = fallback.1.min(127);
+    if let (Some(lo), Some(hi)) = (midis.iter().min(), midis.iter().max()) {
+        low = *lo - 2;
+        high = *hi + 3;
+    }
+    if high - low < 24 {
+        let center = (high + low) as f32 / 2.0;
+        low = (center - 12.0).floor() as i32;
+        high = (center + 12.0).ceil() as i32;
+    }
+    let low = low.clamp(0, 108);
+    (low, high.clamp(low + 18, 127))
+}
+
+/// The lane range a chart needs: a little below and above its notes, and at
+/// least an octave tall.
+pub fn pitch_range(notes: &[Note]) -> Option<(i32, i32)> {
+    let midis = notes.iter().map(|note| note.midi);
+    let (lo, hi) = (midis.clone().min()?, midis.max()?);
+    let low = (lo - 2).clamp(0, 108);
+    let high = (hi + 2).clamp(low + 12, 127);
+    Some((low, high))
+}
+
+/// Split a lyric line into placeable words with timings: one per `LyricWord`
+/// when the line has them, each multi-word entry divided by character weight,
+/// otherwise the whole line as one word.
+pub fn split_line_words(line: &LyricLine) -> Vec<(String, f64, f64)> {
+    let mut source: Vec<(String, f64, f64)> = Vec::new();
+    if line.words.is_empty() {
+        source.push((
+            line.text.clone(),
+            line.start,
+            line.end.max(line.start + 0.3),
+        ));
+    } else {
+        for word in &line.words {
+            source.push((
+                word.text.clone(),
+                word.start,
+                word.end.max(word.start + 0.12),
+            ));
+        }
+    }
+    let mut result = Vec::new();
+    for (text, start, end) in source {
+        let parts: Vec<&str> = text.split_whitespace().collect();
+        if parts.len() <= 1 {
+            if let Some(part) = parts.first() {
+                result.push((part.to_string(), start, end));
+            }
+            continue;
+        }
+        let weights: Vec<f64> = parts
+            .iter()
+            .map(|part| (part.chars().count() as f64 + 1.0).max(2.0))
+            .collect();
+        let total: f64 = weights.iter().sum();
+        let span = (end - start).max(0.2);
+        let mut cursor = start;
+        for (part, weight) in parts.iter().zip(weights.iter()) {
+            let duration = span * weight / total;
+            result.push((part.to_string(), cursor, cursor + duration));
+            cursor += duration;
+        }
+    }
+    if result.is_empty() {
+        result.push((
+            line.text.clone(),
+            line.start,
+            line.end.max(line.start + 0.3),
+        ));
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranks_follow_the_thresholds() {
+        assert_eq!(rank_for(100.0), 'S');
+        assert_eq!(rank_for(92.0), 'S');
+        assert_eq!(rank_for(91.9), 'A');
+        assert_eq!(rank_for(70.0), 'B');
+        assert_eq!(rank_for(55.0), 'C');
+        assert_eq!(rank_for(0.0), 'D');
+    }
+
+    #[test]
+    fn a_take_beats_another_on_accuracy_then_score() {
+        let a = ScoreRecord {
+            score: 5000,
+            accuracy: 78.0,
+            combo: 40,
+        };
+        let b = ScoreRecord {
+            score: 4500,
+            accuracy: 85.0,
+            combo: 9,
+        };
+        let c = ScoreRecord {
+            score: 4600,
+            accuracy: 85.0,
+            combo: 9,
+        };
+        assert!(b.beats(&a));
+        assert!(!a.beats(&b));
+        assert!(c.beats(&b));
+        assert!(!b.beats(&c));
+        assert!(!b.beats(&b));
+    }
+
+    #[test]
+    fn displayed_accuracy_never_rounds_past_a_rank() {
+        assert_eq!(accuracy_label(91.6), "91%");
+        assert_eq!(accuracy_label(92.0), "92%");
+        assert_eq!(accuracy_label(0.0), "0%");
+    }
+
+    #[test]
+    fn next_rank_names_the_tier_above() {
+        assert_eq!(next_rank(95.0), None);
+        assert_eq!(next_rank(84.0), Some(('S', 8.0)));
+        assert_eq!(next_rank(81.6), Some(('A', 1.0)));
+        assert_eq!(next_rank(10.0), Some(('C', 45.0)));
+    }
 }

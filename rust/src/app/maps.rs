@@ -130,7 +130,7 @@ impl KaraokeMachineApp {
                     Color32::WHITE,
                 );
             } else {
-                paint_cover_fallback(p, cover, &entry.title);
+                paint_cover_fallback(p, cover, 8.0, &entry.title);
             }
             p.text(
                 Pos2::new(row.left() + 66.0, row.top() + 9.0),
@@ -143,7 +143,7 @@ impl KaraokeMachineApp {
                 Pos2::new(row.left() + 66.0, row.top() + 27.0),
                 Align2::LEFT_TOP,
                 &entry.artist,
-                FontId::monospace(7.0),
+                FontId::monospace(10.0),
                 MUTED,
             );
             let install = Rect::from_min_size(
@@ -185,7 +185,7 @@ impl KaraokeMachineApp {
                     Color32::WHITE,
                 );
             } else {
-                paint_cover_fallback(p, cover, &song.title);
+                paint_cover_fallback(p, cover, 8.0, &song.title);
             }
             p.text(
                 Pos2::new(row.left() + 66.0, row.top() + 9.0),
@@ -198,7 +198,7 @@ impl KaraokeMachineApp {
                 Pos2::new(row.left() + 66.0, row.top() + 27.0),
                 Align2::LEFT_TOP,
                 format!("Bundled warm-up · {}", format_time(song.duration())),
-                FontId::monospace(7.0),
+                FontId::monospace(10.0),
                 MUTED,
             );
             let sing = Rect::from_min_size(

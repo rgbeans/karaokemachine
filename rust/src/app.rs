@@ -19,7 +19,7 @@ use crate::library::{
 use crate::map_package::{MapIndex, MapIndexEntry, MapPackage};
 use crate::model::{pitch_color, Album, MapFile, MapInfo, Scores, Settings, Song};
 use crate::pitch::{PitchReading, PitchTracker};
-use crate::theme::{alpha, BG, INK, MINT};
+use crate::theme::{alpha, BG, INK, MINT, MUTED};
 use eframe::egui::{self, Color32, Id, Pos2, RichText, Stroke, TextureHandle, Vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -72,12 +72,13 @@ enum Action {
     Reload,
     Seek(f64),
     RetrySong,
-    OpenLibraryFromResults,
     OpenUpload,
     ShowMaps,
     InstallMap,
     InstallRemoteMap(usize),
     EditSong(usize),
+    /// Leave the stage for the home screen.
+    Home,
 }
 
 /// Vocal-stem analysis the editor needs, computed by the decode job.
@@ -120,6 +121,8 @@ pub struct KaraokeMachineApp {
     range_high_seen: Option<i32>,
     range_last_note: Option<i32>,
     range_note_frames: u32,
+    /// The first click on "Clear high scores" arms a confirmation.
+    clear_scores_armed: bool,
     upload: UploadState,
     map_index: Vec<MapIndexEntry>,
     map_index_job: Option<Job<MapIndex>>,
@@ -212,7 +215,7 @@ impl KaraokeMachineApp {
             mic_devices: input_device_names(),
             tracker: PitchTracker::default(),
             reading: None,
-            drawer_open: true,
+            drawer_open: false,
             drawer_view: DrawerView::Albums,
             selected_album: None,
             drawer_scroll: 0.0,
@@ -223,6 +226,7 @@ impl KaraokeMachineApp {
             range_high_seen: None,
             range_last_note: None,
             range_note_frames: 0,
+            clear_scores_armed: false,
             upload: UploadState::default(),
             map_index: Vec::new(),
             map_index_job: None,
@@ -309,10 +313,49 @@ impl KaraokeMachineApp {
         visuals.widgets.hovered.bg_fill = Color32::from_rgb(24, 32, 49);
         visuals.widgets.active.bg_fill = Color32::from_rgb(31, 42, 61);
         visuals.selection.bg_fill = alpha(MINT, 50);
+        visuals.selection.stroke = Stroke::new(1.0f32, MINT);
+        // Stock egui widgets (settings, upload form) take the painted
+        // widgets' shape and palette so the two families read as one app.
+        let corner = egui::CornerRadius::same(4);
+        for widget in [
+            &mut visuals.widgets.noninteractive,
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.open,
+        ] {
+            widget.corner_radius = corner;
+        }
+        visuals.widgets.inactive.fg_stroke = Stroke::new(1.0f32, INK);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0f32, INK);
+        visuals.widgets.active.fg_stroke = Stroke::new(1.0f32, MINT);
+        visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0f32, MUTED);
+        visuals.window_corner_radius = egui::CornerRadius::same(16);
+        visuals.window_stroke = Stroke::new(1.0f32, Color32::from_white_alpha(30));
+        visuals.window_shadow = egui::Shadow::NONE;
         ctx.set_visuals(visuals);
         let mut style = (*ctx.style()).clone();
         style.spacing.item_spacing = Vec2::new(10.0, 9.0);
         style.spacing.button_padding = Vec2::new(14.0, 8.0);
+        style.spacing.slider_width = 160.0;
+        // One readable scale: nothing the user has to read is under 11 pt.
+        use egui::{FontFamily, TextStyle};
+        style.text_styles.insert(
+            TextStyle::Small,
+            egui::FontId::new(11.0, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Body,
+            egui::FontId::new(13.5, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Button,
+            egui::FontId::new(13.5, FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            TextStyle::Monospace,
+            egui::FontId::new(12.0, FontFamily::Monospace),
+        );
         ctx.set_style(style);
     }
 
@@ -402,7 +445,10 @@ impl KaraokeMachineApp {
         }
         self.editor = Some(editor);
         self.map_picker = None;
-        self.start_audio_load(backing, Some(vocals), true);
+        let loading = self.start_audio_load(backing, Some(vocals), true);
+        if let Some(editor) = &mut self.editor {
+            editor.set_audio_loading(loading);
+        }
         self.started_at = now;
         self.tracker.reset();
         self.reading = None;
@@ -444,9 +490,15 @@ impl KaraokeMachineApp {
 
     /// Decode a song on a worker thread. `poll_audio_load` installs it into
     /// the engine when it is ready; a load started later replaces this one.
-    fn start_audio_load(&mut self, backing: PathBuf, vocals: Option<PathBuf>, for_editor: bool) {
+    /// Returns false when there is no audio engine to load into.
+    fn start_audio_load(
+        &mut self,
+        backing: PathBuf,
+        vocals: Option<PathBuf>,
+        for_editor: bool,
+    ) -> bool {
         let Some(audio) = &self.audio else {
-            return;
+            return false;
         };
         let rate = audio.sample_rate();
         self.audio_load = Some(Job::run("Audio loading", &self.ctx, move || {
@@ -458,6 +510,7 @@ impl KaraokeMachineApp {
             });
             Ok((audio, analysis))
         }));
+        true
     }
 
     fn poll_audio_load(&mut self, now: f64) {
@@ -471,6 +524,9 @@ impl KaraokeMachineApp {
                 if let Some(stage) = &mut self.stage {
                     stage.audio_loading = false;
                     stage.play_when_loaded = false;
+                }
+                if let Some(editor) = &mut self.editor {
+                    editor.set_audio_loading(false);
                 }
                 self.toast(format!("Could not load audio: {error}"), now);
                 return;
@@ -540,7 +596,10 @@ impl KaraokeMachineApp {
             if let Some(audio) = &self.audio {
                 audio.set_volumes(0.9, 0.85);
             }
-            self.start_audio_load(backing, Some(vocals), true);
+            let loading = self.start_audio_load(backing, Some(vocals), true);
+            if let Some(editor) = &mut self.editor {
+                editor.set_audio_loading(loading);
+            }
         } else if let Some(stage) = &mut self.stage {
             let backing = song_audio_path(&self.root, &stage.song, "backing");
             let vocals = song_audio_path(&self.root, &stage.song, "vocals");
@@ -614,8 +673,13 @@ impl KaraokeMachineApp {
                 }
             }
             Action::RetrySong => self.restart_song(now),
-            Action::OpenLibraryFromResults => {
-                self.open_menu();
+            Action::Home => {
+                if let Some(audio) = &self.audio {
+                    audio.stop();
+                }
+                self.stage = None;
+                self.drawer_open = false;
+                self.selected_album = None;
             }
             Action::OpenUpload => {
                 self.upload.open = true;
@@ -912,7 +976,8 @@ impl eframe::App for KaraokeMachineApp {
                 }
             });
         match editor_event {
-            EditorEvent::None => {}
+            // AutoMap is handled inside the editor and never reaches here.
+            EditorEvent::None | EditorEvent::AutoMap => {}
             EditorEvent::Back => {
                 let mut leaving = true;
                 if let Some(mut editor) = self.editor.take() {
