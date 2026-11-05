@@ -101,6 +101,10 @@ The top-right **POLICY NET** panel shows the live policy network, model step,
 last loss and the normalized weight delta after a grade. A grade pulses the
 network, highlights changed nodes in gold, and increments the `take N` counter.
 
+A **SONG** picker above the preview lists all 30 targets grouped by album.
+Songs with an ungraded candidate are marked **pending**; choosing one resumes
+that candidate instead of throwing it away.
+
 The transport has:
 
 - **PLAY / PAUSE**
@@ -141,12 +145,18 @@ Everything needed to continue later is saved automatically:
 - the neural checkpoint after **every grade**
 - `state/queue.json`, which stores the current target, round, next song, and
   per-song generated/graded/skipped counts
-- the waiting candidate under `state/pending-<song-id>.npz`
+- every waiting candidate under `state/pending-<song-id>.npz`
 - your playback position every 5 seconds and when you close the page
+
+Passing `--song` or using the SONG picker switches targets immediately. A song
+that already has a waiting candidate resumes that candidate; otherwise a new
+one is generated.
 
 Close the browser or stop the server at any time. Run `./start-ui.sh` again and
 it resumes the waiting candidate at the saved position. After a grade it either
-retries the same song (BAD) or continues with the next song (GOOD).
+retries the same song (BAD) or continues with the next song (GOOD). Browser
+disconnects during a long generation are ignored cleanly; the server still
+finishes and saves the candidate.
 
 To start at a specific target instead of resuming the queue:
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -141,6 +142,22 @@ class Session:
         except Exception:
             return None
 
+    def _targets_payload(self) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for target in self.targets:
+            progress = self.queue.songs.get(target.song_id, {})
+            payload.append(
+                {
+                    "song_id": target.song_id,
+                    "title": target.title,
+                    "album": target.album,
+                    "graded": int(progress.get("graded") or 0),
+                    "generated": int(progress.get("generated") or 0),
+                    "pending": load_pending(target.song_id) is not None,
+                }
+            )
+        return payload
+
     def _set_state(self, info: dict[str, Any]) -> None:
         target = self.current_target
         song = self.current_song
@@ -191,6 +208,7 @@ class Session:
             "generated_for_song": int(progress.get("generated") or 0),
             "last_event": self.last_event,
             "network": self._network_summary(),
+            "targets": self._targets_payload(),
             "next_title": next_target.title,
             "next_album": next_target.album,
         }
@@ -243,6 +261,38 @@ class Session:
             self._set_state(info)
             return
         raise RuntimeError("could not generate any target: " + "; ".join(errors))
+
+    def choose_song(self, song_id: str) -> dict[str, Any]:
+        with self.lock:
+            index = self._target_index(song_id)
+            if index is None:
+                raise RuntimeError(f"{song_id} is not a generation target")
+            if self.current_target is not None and self.current_target.song_id == song_id:
+                return self.state or {}
+            target = self.targets[index]
+            self.queue.current_song_id = target.song_id
+            self.queue.next_index = (index + 1) % len(self.targets)
+            progress = self.queue.songs.get(target.song_id, {})
+            self.last_event = {
+                "kind": "select",
+                "grade": 0,
+                "reward": 0.0,
+                "title": target.title,
+                "album": target.album,
+                "grades_for_song": int(progress.get("graded") or 0),
+            }
+            save_queue(self.queue)
+            pending = load_pending(target.song_id)
+            song = self._song(target.song_id)
+            self.current_target = target
+            self.current_song = song
+            if pending is not None:
+                self._set_state_from_pending(pending, target, song)
+            else:
+                info = generate_candidate(target.song_id, install=self.install)
+                mark_generated(self.queue, self.targets, index, target, info)
+                self._set_state(info)
+            return self.state or {}
 
     def _generate_same(self) -> None:
         if self.current_target is None or self.current_song is None:
@@ -343,12 +393,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
     def _send_static(self, name: str) -> None:
         path = ASSET_DIR / name
@@ -357,12 +410,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = path.read_bytes()
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
     def _audio_path(self, kind: str) -> Path | None:
         song = self.session.current_song
@@ -403,14 +459,18 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 start, end, status = 0, size - 1, 200
         length = end - start + 1
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(length))
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-store")
-        if status == 206:
-            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-        self.end_headers()
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "no-store")
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+            return
         if head_only:
             return
         try:
@@ -473,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in {"/api/grade", "/api/next", "/api/position"}:
+        if path not in {"/api/grade", "/api/next", "/api/song", "/api/position"}:
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -489,12 +549,18 @@ class Handler(BaseHTTPRequestHandler):
                     float(payload.get("seconds") or 0.0),
                     payload.get("candidate_id"),
                 )
-                self.send_response(204)
-                self.end_headers()
+                try:
+                    self.send_response(204)
+                    self.end_headers()
+                except (BrokenPipeError, ConnectionResetError):
+                    self.close_connection = True
                 return
-            elif path == "/api/next":
-                state = self.session.next_candidate()
+            if path == "/api/song":
+                state = self.session.choose_song(str(payload.get("song_id") or ""))
                 self._send_json(200, {"state": state})
+                return
+            if path == "/api/next":
+                state = self.session.next_candidate()
             else:
                 grade = int(payload.get("grade", 0))
                 if grade not in {1, 2, 3, 4, 5}:
@@ -502,8 +568,20 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 state = self.session.grade(grade, payload.get("candidate_id"))
             self._send_json(200, {"state": state})
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
         except Exception as error:
             self._send_json(409, {"error": str(error)})
+
+
+class QuietServer(ThreadingHTTPServer):
+    """Suppress tracebacks from clients that navigate away mid-response."""
+
+    def handle_error(self, request, client_address) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def run_ui(
@@ -531,7 +609,7 @@ def run_ui(
     )
     print("Loading the approved-map anchor…")
     session = Session(targets, queue, install=install)
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = QuietServer((host, port), Handler)
     server.session = session  # type: ignore[attr-defined]
     url = f"http://{host}:{port}/"
     print(f"Autogenerator UI: {url}")

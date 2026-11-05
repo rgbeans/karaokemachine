@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('canvas');
 const networkCanvas = $('networkCanvas');
 const networkMeta = $('networkMeta');
+const songSelect = $('songSelect');
 const vocals = $('vocals');
 const backing = $('backing');
 const seek = $('seek');
@@ -109,11 +110,39 @@ function statusFor(state) {
       }
       return `last ${good ? 'GOOD' : 'BAD'} on ${event.title} · ${event.grades_for_song || 0} graded there · next ${state.next_title}`;
     }
+    if (event.kind === 'select') {
+      $('status').className = 'status';
+      return `switched to ${event.title} · ${event.grades_for_song || 0} graded there · listen, then grade`;
+    }
     $('status').className = 'status';
     return `skipped ${event.title} · next ${state.next_title}`;
   }
   $('status').className = 'status';
   return `round ${state.round} · ${state.song_index}/${state.song_total} · ${state.grades_for_song} graded here · listen, then grade`;
+}
+
+function populateSongSelect() {
+  if (!state || !Array.isArray(state.targets)) return;
+  const albums = new Map();
+  for (const target of state.targets) {
+    if (!albums.has(target.album)) albums.set(target.album, []);
+    albums.get(target.album).push(target);
+  }
+  songSelect.replaceChildren();
+  for (const [album, targets] of albums) {
+    const group = document.createElement('optgroup');
+    group.label = album;
+    for (const target of targets) {
+      const option = document.createElement('option');
+      option.value = target.song_id;
+      const suffix = target.pending ? ' · pending' : target.graded ? ` · ${target.graded} graded` : '';
+      option.textContent = `${target.title}${suffix}`;
+      group.append(option);
+    }
+    songSelect.append(group);
+  }
+  songSelect.value = state.song_id;
+  songSelect.disabled = busy;
 }
 
 function applyState(next) {
@@ -134,6 +163,7 @@ function applyState(next) {
   $('artist').textContent = state.artist || '';
   $('meta').textContent = `${state.note_count} notes · take ${state.generated_for_song} · step ${state.model_step}`;
   $('status').textContent = statusFor(state);
+  populateSongSelect();
 
   if (songChanged) {
     pauseAll();
@@ -445,9 +475,13 @@ function setBusy(value, message) {
   $('down').disabled = value;
   $('up').disabled = value;
   $('next').disabled = value;
+  songSelect.disabled = value;
   $('loading').hidden = !value;
   if (message) $('loading-text').textContent = message;
-  if (!value) draw();
+  if (!value) {
+    draw();
+    populateSongSelect();
+  }
 }
 
 async function request(url, options = {}) {
@@ -518,6 +552,26 @@ function sendPosition(beacon = false) {
 $('down').addEventListener('click', () => grade(1));
 $('up').addEventListener('click', () => grade(5));
 $('next').addEventListener('click', nextCandidate);
+songSelect.addEventListener('change', async () => {
+  if (!state || busy) return;
+  const songId = songSelect.value;
+  if (songId === state.song_id) return;
+  const target = (state.targets || []).find((item) => item.song_id === songId);
+  setBusy(true, `Loading ${target ? target.title : 'song'}…`);
+  try {
+    const payload = await request('/api/song', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song_id: songId })
+    });
+    applyState(payload.state);
+  } catch (error) {
+    $('status').textContent = String(error.message || error);
+    songSelect.value = state.song_id;
+  } finally {
+    setBusy(false);
+  }
+});
 $('vocalsToggle').addEventListener('click', () => {
   vocalsOn = !vocalsOn;
   updateToggleLabels();

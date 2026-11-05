@@ -119,6 +119,32 @@ h1 {
   color: var(--muted);
   font-size: 12px;
 }
+.song-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+.song-picker label {
+  color: var(--muted-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+#songSelect {
+  min-height: 30px;
+  max-width: min(380px, 52vw);
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: #0f1523;
+  color: var(--ink);
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+}
+#songSelect:focus { border-color: rgba(124, 247, 196, 0.6); }
+#songSelect:disabled { opacity: 0.4; cursor: default; }
 .meta {
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
