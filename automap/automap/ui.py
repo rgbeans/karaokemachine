@@ -14,11 +14,14 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from .config import MODEL_PATH, PACKAGE_DIR
+from . import word_model
+from .audio import load_or_extract
+from .config import MODEL_PATH, PACKAGE_DIR, WORD_MODEL_PATH
 from .dataset import TrackData, load_track
 from .generate import generate_candidate, pending_path
 from .grade import load_pending, update_from_grade
-from .maps import Song, load_approved_tracks, load_song
+from .maps import Song, load_approved_tracks, load_song, write_json
+from .notes import place_words
 from .policy import load_checkpoint
 from .queue import (
     QueueState,
@@ -165,6 +168,21 @@ class Session:
             raise RuntimeError("no current generation target")
         path = info.get("installed") or info.get("archive")
         document = json.loads(Path(path).read_text(encoding="utf-8"))
+        alignment = word_model.alignment_for_song(song.id)
+        desired_alignment = (
+            "calibrated" if alignment is not None and WORD_MODEL_PATH.exists() else "lyrics"
+        )
+        if document.get("wordAlignment") != desired_alignment:
+            try:
+                audio = load_or_extract(song)
+                document["placedWords"] = place_words(
+                    song, document.get("notes") or [], audio
+                )
+                document["wordAlignment"] = desired_alignment
+                for output in {Path(path), Path(info["archive"])}:
+                    write_json(output, document)
+            except Exception as error:
+                print(f"warning: could not calibrate words for {song.title}: {error}")
         index = self._target_index(target.song_id) or 0
         total = len(self.targets)
         next_target = self.targets[(index + 1) % total]
@@ -208,6 +226,7 @@ class Session:
             "generated_for_song": int(progress.get("generated") or 0),
             "last_event": self.last_event,
             "network": self._network_summary(),
+            "word_alignment": word_model.alignment_for_song(song.id),
             "targets": self._targets_payload(),
             "next_title": next_target.title,
             "next_album": next_target.album,

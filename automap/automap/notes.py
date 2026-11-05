@@ -95,7 +95,11 @@ def match_note_sets(
     return precision, recall, f1
 
 
-def place_words(song: Song, notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def place_words(
+    song: Song,
+    notes: list[dict[str, Any]],
+    audio: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if not notes:
         return []
     words: list[WordTiming] = flatten_words(song.lines)
@@ -105,28 +109,53 @@ def place_words(song: Song, notes: list[dict[str, Any]]) -> list[dict[str, Any]]
     low, high = min(midis), max(midis)
     span = max(12, high - low)
     center = (low + high) / 2.0
+    runtime = None
+    karaoke_source = None
+    if audio is not None:
+        from . import karaoke, word_model
+
+        karaoke_source = karaoke.BY_SONG.get(song.id)
+        if karaoke_source is not None:
+            runtime = word_model.load_word_model()
     placed: list[dict[str, Any]] = []
     for word in words:
+        line = song.lines[word.line] if word.line < len(song.lines) else {}
+        line_words = list(line.get("words") or [])
+        word_count = len(line_words) or sum(1 for item in words if item.line == word.line)
+        word_dict = (
+            line_words[word.word_index]
+            if word.word_index < len(line_words)
+            else {"text": word.text, "start": word.start, "end": word.end}
+        )
+        start = float(word.start)
+        if runtime is not None and karaoke_source is not None and audio is not None:
+            start = word_model.predict_word_time(
+                runtime,
+                song,
+                audio,
+                karaoke_source,
+                line,
+                word.line,
+                word_dict,
+                word.word_index,
+                word_count,
+            )
         candidates = [
             note
             for note in notes
-            if note["start"] <= word.end + 0.18
-            and note["start"] + note["dur"] >= word.start - 0.18
+            if note["start"] <= start + 0.35
+            and note["start"] + note["dur"] >= start - 0.35
         ]
         if candidates:
-            # The word pill follows the generated note that carries the word,
-            # so a new candidate visibly moves its lyric placements.
             note = max(
                 candidates,
                 key=lambda item: min(
-                    float(item["start"]) + float(item["dur"]), word.end + 0.18
+                    float(item["start"]) + float(item["dur"]), start + 0.35
                 )
-                - max(float(item["start"]), word.start - 0.18),
+                - max(float(item["start"]), start - 0.35),
             )
-            start = float(note["start"]) + float(note["dur"]) * 0.5
             y = 0.5 - (float(note["midi"]) - center) / span * 0.42
         else:
-            start = float(word.start)
             y = 0.5
         placed.append(
             {
@@ -158,7 +187,12 @@ def build_ribbon_links(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return links
 
 
-def build_map_document(song: Song, notes: list[dict[str, Any]]) -> dict[str, Any]:
+def build_map_document(
+    song: Song,
+    notes: list[dict[str, Any]],
+    audio: dict[str, Any] | None = None,
+    word_alignment: str = "lyrics",
+) -> dict[str, Any]:
     midis = [int(note["midi"]) for note in notes]
     low = max(0, min(midis) - 2) if midis else 48
     high = min(127, max(midis) + 2) if midis else 72
@@ -168,9 +202,10 @@ def build_map_document(song: Song, notes: list[dict[str, Any]]) -> dict[str, Any
         "draft": True,
         "notes": notes,
         "lines": song.lines,
-        "placedWords": place_words(song, notes),
+        "placedWords": place_words(song, notes, audio),
         "customWords": [],
         "ribbonLinks": build_ribbon_links(notes),
+        "wordAlignment": word_alignment,
         "low": low,
         "high": high,
     }

@@ -93,3 +93,9 @@ POLICY_GRADIENT_SCALE = 10.0
 def ensure_dirs() -> None:
     for path in (CACHE_DIR, CHECKPOINT_DIR, CANDIDATE_DIR, STATE_DIR):
         path.mkdir(parents=True, exist_ok=True)
+
+
+# Word-placement calibration against public karaoke timings.
+WORD_MODEL_PATH = CHECKPOINT_DIR / "word_policy.pt"
+WORD_METRICS_PATH = AUTOMAP_DIR / "word_metrics.json"
+WORD_OFFSETS_PATH = AUTOMAP_DIR / "word_offsets.json"

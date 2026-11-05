@@ -285,8 +285,9 @@ automap/               standalone experimental neural autogenerator
 
 `automap/` is a standalone Python research tool that learns from the approved Man in the
 Box map and works through the other Alice in Chains songs on Dirt, Facelift, and Jar of
-Flies. It writes playable draft maps and has its own resumable thumbs-up/down grading
-window. It is not compiled into the app. See [automap/README.md](automap/README.md).
+Flies. It writes playable draft maps, calibrates word placements against public karaoke
+timings for several songs, and has its own resumable thumbs-up/down grading window. It is
+not compiled into the app. See [automap/README.md](automap/README.md).
 
 ## Known limits
 

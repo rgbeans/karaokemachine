@@ -1,0 +1,103 @@
+{
+  "source": "USDB public UltraStar note timings",
+  "feature_names": [
+    "local_start_frac",
+    "local_duration",
+    "word_length",
+    "word_index_frac",
+    "line_position",
+    "line_frac",
+    "line_start_frac",
+    "line_duration",
+    "previous_gap",
+    "next_gap",
+    "source_offset",
+    "midi_norm",
+    "rms",
+    "onset",
+    "voiced_ratio",
+    "song_duration",
+    "source_Them Bones",
+    "source_We Die Young",
+    "source_No Excuses",
+    "source_Would?"
+  ],
+  "overall_baseline_mae": 0.8610872030258179,
+  "overall_mae": 0.02602975443005562,
+  "songs": {
+    "yt-zTuD8k3JvxQ": {
+      "title": "Them Bones",
+      "usdb_id": 1597,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=1597",
+      "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs",
+      "offset": 0.4,
+      "words": 100,
+      "baseline_mae": 0.6827007447661583,
+      "mae": 0.0258578322827816
+    },
+    "yt-6JA25BIxgtk": {
+      "title": "We Die Young",
+      "usdb_id": 24234,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=24234",
+      "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs",
+      "offset": 0.35,
+      "words": 89,
+      "baseline_mae": 0.8007419500895455,
+      "mae": 0.027058232575654984
+    },
+    "yt-r80HF68KM8g": {
+      "title": "No Excuses",
+      "usdb_id": 16056,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=16056",
+      "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs",
+      "offset": -3.7,
+      "words": 60,
+      "baseline_mae": 1.3485971425226437,
+      "mae": 0.039746012538671494
+    },
+    "yt-Nco_kh8xJDs": {
+      "title": "Would?",
+      "usdb_id": 63,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=63",
+      "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs",
+      "offset": -0.25,
+      "words": 127,
+      "baseline_mae": 0.813518680058629,
+      "mae": 0.018964260816574097
+    }
+  },
+  "sources": [
+    {
+      "song_id": "yt-zTuD8k3JvxQ",
+      "usdb_id": 1597,
+      "title": "Them Bones",
+      "offset": 0.4,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=1597",
+      "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs"
+    },
+    {
+      "song_id": "yt-6JA25BIxgtk",
+      "usdb_id": 24234,
+      "title": "We Die Young",
+      "offset": 0.35,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=24234",
+      "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs"
+    },
+    {
+      "song_id": "yt-r80HF68KM8g",
+      "usdb_id": 16056,
+      "title": "No Excuses",
+      "offset": -3.7,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=16056",
+      "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs"
+    },
+    {
+      "song_id": "yt-Nco_kh8xJDs",
+      "usdb_id": 63,
+      "title": "Would?",
+      "offset": -0.25,
+      "source_url": "https://usdb.animux.de/index.php?link=detail&id=63",
+      "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs"
+    }
+  ]
+}

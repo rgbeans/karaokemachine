@@ -73,8 +73,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(document["low"], 58)
         self.assertEqual(document["high"], 64)
         # Word pills follow the generated note that carries the word.
-        self.assertAlmostEqual(document["placedWords"][0]["start"], 1.25)
-        self.assertAlmostEqual(document["placedWords"][1]["start"], 2.25)
+        self.assertAlmostEqual(document["placedWords"][0]["start"], 1.0)
+        self.assertAlmostEqual(document["placedWords"][1]["start"], 2.0)
 
     def test_targets_are_the_other_albums_and_exclude_man_in_the_box(self) -> None:
         import json
@@ -86,6 +86,52 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(ids), 30)
         self.assertNotIn("yt-H1i5HaQV9ck", ids)
         self.assertEqual(set(payload["albums"]), {"Dirt", "Facelift", "Jar of Flies"})
+
+    def test_word_calibration_metrics_are_present(self) -> None:
+        import json
+
+        from automap import karaoke
+        from automap.config import WORD_METRICS_PATH, WORD_OFFSETS_PATH
+
+        metrics = json.loads(WORD_METRICS_PATH.read_text(encoding="utf-8"))
+        offsets = json.loads(WORD_OFFSETS_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(set(offsets), {source.song_id for source in karaoke.SOURCES})
+        self.assertLess(metrics["overall_mae"], 0.1)
+        self.assertEqual(set(metrics["songs"]), set(offsets))
+        for item in metrics["songs"].values():
+            self.assertLess(item["mae"], 0.1)
+
+    def test_word_features_match_the_model_contract(self) -> None:
+        from automap import karaoke, word_model
+
+        song = Song(
+            id=karaoke.SOURCES[0].song_id,
+            title="Test",
+            artist="Tester",
+            album="Tests",
+            duration=2.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
+            lines=[],
+            raw={},
+        )
+        line = {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "hello",
+            "words": [{"text": "hello", "start": 0.2, "end": 0.8}],
+        }
+        audio = {
+            "fps": 50.0,
+            "midi": np.full(100, 60.0, dtype=np.float32),
+            "rms": np.full(100, 0.1, dtype=np.float32),
+            "flux": np.zeros(100, dtype=np.float32),
+            "voiced": np.ones(100, dtype=bool),
+        }
+        features = word_model.word_features(
+            song, audio, line, 0, line["words"][0], 0, 1, karaoke.SOURCES[0]
+        )
+        self.assertEqual(len(features), len(word_model.FEATURE_NAMES))
 
     def test_note_matching(self) -> None:
         truth = [{"start": 1.0, "midi": 60}, {"start": 2.0, "midi": 62}]

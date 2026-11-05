@@ -35,7 +35,8 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 5. Ensures every timed lyric word with a nearby vocal proposal gets at least one
    note, so intros and quiet lyric lines are not empty.
 6. Writes a playable draft map with notes, ribbons, lyric lines, and placed
-   lyric words:
+   lyric words. For songs with public karaoke timing data, a second small
+   network calibrates the word times against those public versions.
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
 7. Plays the map in the grading window. A thumbs-down updates the policy and
@@ -75,6 +76,37 @@ F1, held-out candidate F1, and the checkpoint path.
 
 The checkpoint is `automap/checkpoints/note_policy.pt`.
 
+## Train word timing against public karaoke versions
+
+```bash
+cd automap
+.venv/bin/python -m automap train-words
+```
+
+This fetches the public USDB UltraStar timing pages for four of the target
+songs — **Them Bones**, **We Die Young**, **No Excuses**, and **Would?** — and
+trains the word-placement calibration network. Only timing/text pages are
+fetched; no karaoke audio is downloaded. Raw pages stay in the ignored
+`cache/karaoke/` folder.
+
+The committed calibration result is in `word_metrics.json`:
+
+| Song | Words | Baseline word error | Calibrated error |
+| --- | ---: | ---: | ---: |
+| Them Bones | 100 | 683 ms | **25.9 ms** |
+| We Die Young | 89 | 801 ms | **27.1 ms** |
+| No Excuses | 60 | 1349 ms | **39.7 ms** |
+| Would? | 127 | 814 ms | **19.0 ms** |
+| **Overall** | **376** | **861 ms** | **26.0 ms** |
+
+The model is fitted to those public versions; it is a calibration model for
+those songs, not a claim of held-out generalization. Other targets fall back to
+the song's synced lyric timings. The UI shows `WORD TIMING · USDB · N ms` for a
+calibrated song and `WORD TIMING · LYRICS` otherwise.
+
+The calibration sources are listed in `word_offsets.json`; the side-by-side
+public timing pages are linked there.
+
 ## Grade in the UI
 
 ```bash
@@ -92,10 +124,11 @@ playhead, so the notes are readable instead of squeezing the whole song into one
 view.
 
 The map's placed lyric words are drawn as pills at their mapped times and
-vertical positions. The active word gets a gold underline. The pills follow the
-generated note that carries each word, so a new take moves the lyric placements.
-This is the same `placedWords` data the KaraokeMachine stage uses, so what you
-grade is what the app plays.
+vertical positions. The active word gets a gold underline. Times come from the
+word-timing calibration network for the four public-karaoke songs, or from the
+song's synced lyrics otherwise; the note policy supplies the vertical pitch
+placement. This is the same `placedWords` data the KaraokeMachine stage uses, so
+what you grade is what the app plays.
 
 The top-right **POLICY NET** panel shows the live policy network, model step,
 last loss and the normalized weight delta after a grade. A grade pulses the
@@ -180,6 +213,9 @@ cd automap
 
 # Grade in the terminal and keep generating candidates.
 .venv/bin/python -m automap grade --song yt-zTuD8k3JvxQ
+
+# Train the word-timing calibration against public USDB karaoke timings.
+.venv/bin/python -m automap train-words
 ```
 
 Useful UI options:
@@ -224,6 +260,10 @@ KaraokeMachine editor and submit it like any other map.
 | `automap/train.py` | supervised training |
 | `automap/generate.py` | candidate map writing and calibration |
 | `automap/grade.py` | reward mapping and policy updates |
+| `automap/karaoke.py` | public USDB timing fetch and word targets |
+| `automap/word_model.py` | word-timing calibration network |
+| `word_metrics.json` | committed calibration metrics and sources |
+| `word_offsets.json` | committed per-song public timing offsets |
 | `automap/queue.py` | target queue and persistent progress |
 | `automap/ui.py` | local grading server, dual-audio streaming, queue session |
 | `automap/ui_assets/` | the sidescrolling thumbs-up/down window |
@@ -241,9 +281,9 @@ and never embeds audio in a map.
   fully generalize. The grading loop is how it adapts across the 30 targets.
 - The pitch tracker misses about 10 of the 184 approved notes; those notes are
   excluded from the supervised selection labels.
-- Lyric words use the song's synced timings. Their pill position follows the
-  generated note that carries the word; the model does not yet learn word
-  placements directly from the approved map.
+- Word timing is calibrated against four public USDB karaoke versions. The
+  reported error is a fit to those versions, not a held-out generalization
+  benchmark. Other songs use synced lyric timings.
 - Coverage notes are forced at timed words when the policy would otherwise leave
   a lyric line empty. They are a safety net, not a separate learned model.
 - The target songs already have draft maps on disk, but those drafts are never

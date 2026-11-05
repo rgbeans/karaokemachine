@@ -162,6 +162,17 @@ function applyState(next) {
   $('title').textContent = state.title || 'Untitled';
   $('artist').textContent = state.artist || '';
   $('meta').textContent = `${state.note_count} notes · take ${state.generated_for_song} · step ${state.model_step}`;
+  const alignment = state.word_alignment;
+  if (alignment && alignment.mae != null) {
+    const label = String(alignment.source || 'USDB').includes('USDB') ? 'USDB' : String(alignment.source);
+    $('alignment').className = 'alignment';
+    $('alignment').textContent = `WORD TIMING · ${label} · ${Math.round(Number(alignment.mae) * 1000)} ms`;
+    $('alignment').title = alignment.source_url || '';
+  } else {
+    $('alignment').className = 'alignment lyrics';
+    $('alignment').textContent = 'WORD TIMING · LYRICS';
+    $('alignment').title = 'No public karaoke timing calibration for this song';
+  }
   $('status').textContent = statusFor(state);
   populateSongSelect();
 
