@@ -107,6 +107,12 @@ calibrated song and `WORD TIMING · LYRICS` otherwise.
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
+**Note tracks** for those same four songs are rebuilt from the public USDB
+UltraStar note lines rather than the one-song neural policy. Their note times
+use the calibrated song offset, and each pitch is placed in the octave nearest
+the local vocal track. The UI labels them `NOTES · USDB CALIBRATED`; the other
+targets still use the neural policy and show `NOTES · NEURAL POLICY`.
+
 ## Grade in the UI
 
 ```bash
@@ -260,8 +266,9 @@ KaraokeMachine editor and submit it like any other map.
 | `automap/train.py` | supervised training |
 | `automap/generate.py` | candidate map writing and calibration |
 | `automap/grade.py` | reward mapping and policy updates |
-| `automap/karaoke.py` | public USDB timing fetch and word targets |
+| `automap/karaoke.py` | public USDB timing fetch, word and note targets |
 | `automap/word_model.py` | word-timing calibration network |
+| `automap/note_calibration.py` | public note-track rebuilding and octave matching |
 | `word_metrics.json` | committed calibration metrics and sources |
 | `word_offsets.json` | committed per-song public timing offsets |
 | `automap/queue.py` | target queue and persistent progress |
@@ -281,9 +288,10 @@ and never embeds audio in a map.
   fully generalize. The grading loop is how it adapts across the 30 targets.
 - The pitch tracker misses about 10 of the 184 approved notes; those notes are
   excluded from the supervised selection labels.
-- Word timing is calibrated against four public USDB karaoke versions. The
-  reported error is a fit to those versions, not a held-out generalization
-  benchmark. Other songs use synced lyric timings.
+- Word timing and note tracks are calibrated against four public USDB karaoke
+  versions. The word-timing error is a fit to those versions, not a held-out
+  generalization benchmark. The other 26 targets still use the one-song policy
+  and the synced lyric timings.
 - Coverage notes are forced at timed words when the policy would otherwise leave
   a lyric line empty. They are a safety net, not a separate learned model.
 - The target songs already have draft maps on disk, but those drafts are never

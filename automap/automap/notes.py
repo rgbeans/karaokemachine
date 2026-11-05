@@ -192,6 +192,7 @@ def build_map_document(
     notes: list[dict[str, Any]],
     audio: dict[str, Any] | None = None,
     word_alignment: str = "lyrics",
+    note_alignment: str = "policy",
 ) -> dict[str, Any]:
     midis = [int(note["midi"]) for note in notes]
     low = max(0, min(midis) - 2) if midis else 48
@@ -206,6 +207,7 @@ def build_map_document(
         "customWords": [],
         "ribbonLinks": build_ribbon_links(notes),
         "wordAlignment": word_alignment,
+        "noteAlignment": note_alignment,
         "low": low,
         "high": high,
     }

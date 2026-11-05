@@ -182,14 +182,27 @@ def generate_candidate(
         raise RuntimeError("the policy produced no notes; lower the threshold or retrain")
 
     from .config import WORD_MODEL_PATH
+    from .note_calibration import public_notes
     from .word_model import alignment_for_song
 
+    calibrated_notes = public_notes(song, audio)
+    if calibrated_notes:
+        notes = calibrated_notes
+        note_alignment = "usdb"
+    else:
+        note_alignment = "policy"
     word_alignment = (
         "calibrated"
         if alignment_for_song(song.id) is not None and WORD_MODEL_PATH.exists()
         else "lyrics"
     )
-    document = build_map_document(song, notes, audio, word_alignment=word_alignment)
+    document = build_map_document(
+        song,
+        notes,
+        audio,
+        word_alignment=word_alignment,
+        note_alignment=note_alignment,
+    )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     archive = CANDIDATE_DIR / song.id / f"{timestamp}-{_slug(song.title)}.json"
     write_json(archive, document)

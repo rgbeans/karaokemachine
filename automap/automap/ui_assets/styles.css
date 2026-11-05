@@ -160,6 +160,8 @@ h1 {
   white-space: nowrap;
 }
 .alignment.lyrics { color: var(--muted); }
+.alignment.note { color: var(--gold); }
+.alignment.note.policy { color: var(--muted); }
 .alignment a { color: inherit; text-decoration: none; }
 .meta {
   color: var(--muted);

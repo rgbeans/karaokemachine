@@ -70,6 +70,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len(document["notes"]), 2)
         self.assertEqual(len(document["placedWords"]), 2)
         self.assertEqual(document["format"], "karaokemachine-level")
+        self.assertEqual(document["noteAlignment"], "policy")
         self.assertEqual(document["low"], 58)
         self.assertEqual(document["high"], 64)
         # Word pills follow the generated note that carries the word.
@@ -100,6 +101,14 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(set(metrics["songs"]), set(offsets))
         for item in metrics["songs"].values():
             self.assertLess(item["mae"], 0.1)
+
+    def test_public_note_calibration_sources(self) -> None:
+        from automap import karaoke, note_calibration
+
+        for source in karaoke.SOURCES:
+            alignment = note_calibration.alignment_for_song(source.song_id)
+            self.assertIsNotNone(alignment)
+            self.assertEqual(alignment["usdb_id"], source.usdb_id)
 
     def test_word_features_match_the_model_contract(self) -> None:
         from automap import karaoke, word_model

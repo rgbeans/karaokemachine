@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from . import word_model
+from . import note_calibration, word_model
 from .audio import load_or_extract
 from .config import MODEL_PATH, PACKAGE_DIR, WORD_MODEL_PATH
 from .dataset import TrackData, load_track
@@ -168,21 +168,34 @@ class Session:
             raise RuntimeError("no current generation target")
         path = info.get("installed") or info.get("archive")
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-        alignment = word_model.alignment_for_song(song.id)
-        desired_alignment = (
-            "calibrated" if alignment is not None and WORD_MODEL_PATH.exists() else "lyrics"
+        word_alignment = word_model.alignment_for_song(song.id)
+        desired_word_alignment = (
+            "calibrated" if word_alignment is not None and WORD_MODEL_PATH.exists() else "lyrics"
         )
-        if document.get("wordAlignment") != desired_alignment:
+        note_source = note_calibration.alignment_for_song(song.id)
+        needs_notes = note_source is not None and document.get("noteAlignment") != "usdb"
+        needs_words = document.get("wordAlignment") != desired_word_alignment
+        if needs_notes or needs_words:
             try:
                 audio = load_or_extract(song)
-                document["placedWords"] = place_words(
-                    song, document.get("notes") or [], audio
-                )
-                document["wordAlignment"] = desired_alignment
+                if needs_notes:
+                    public = note_calibration.public_notes(song, audio)
+                    if public:
+                        document["notes"] = public
+                        document["noteAlignment"] = "usdb"
+                    else:
+                        document["noteAlignment"] = "policy"
+                    needs_words = True
+                document.setdefault("noteAlignment", "policy")
+                if needs_words:
+                    document["placedWords"] = place_words(
+                        song, document.get("notes") or [], audio
+                    )
+                document["wordAlignment"] = desired_word_alignment
                 for output in {Path(path), Path(info["archive"])}:
                     write_json(output, document)
             except Exception as error:
-                print(f"warning: could not calibrate words for {song.title}: {error}")
+                print(f"warning: could not calibrate {song.title}: {error}")
         index = self._target_index(target.song_id) or 0
         total = len(self.targets)
         next_target = self.targets[(index + 1) % total]
@@ -217,6 +230,11 @@ class Session:
             "low": int(document.get("low") or 0),
             "high": int(document.get("high") or 0),
             "note_count": len(document.get("notes") or []),
+            "first_note": (
+                float(document["notes"][0]["start"])
+                if document.get("notes")
+                else 0.0
+            ),
             "candidate_id": candidate_id,
             "archive": candidate_id,
             "resume_position": resume_position,
@@ -227,6 +245,11 @@ class Session:
             "last_event": self.last_event,
             "network": self._network_summary(),
             "word_alignment": word_model.alignment_for_song(song.id),
+            "note_alignment": (
+                note_calibration.alignment_for_song(song.id)
+                if document.get("noteAlignment") == "usdb"
+                else None
+            ),
             "targets": self._targets_payload(),
             "next_title": next_target.title,
             "next_album": next_target.album,

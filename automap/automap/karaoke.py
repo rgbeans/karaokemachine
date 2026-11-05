@@ -68,13 +68,12 @@ def _fetch(url: str) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def fetch_notes(source: KaraokeSource, force: bool = False) -> list[dict[str, Any]]:
-    """Fetch and parse the public USDB note timings for one source."""
+def fetch_timing(source: KaraokeSource, force: bool = False) -> dict[str, Any]:
+    """Fetch and parse the public USDB timing payload for one source."""
     KARAOKE_CACHE.mkdir(parents=True, exist_ok=True)
     cache = KARAOKE_CACHE / f"{source.usdb_id}.json"
     if cache.exists() and not force:
-        payload = json.loads(cache.read_text(encoding="utf-8"))
-        return list(payload["notes"])
+        return json.loads(cache.read_text(encoding="utf-8"))
 
     detail = _fetch(source.source_url)
     detail_text = re.sub(r"<[^>]+>", " ", detail)
@@ -115,7 +114,11 @@ def fetch_notes(source: KaraokeSource, force: bool = False) -> list[dict[str, An
         "notes": notes,
     }
     cache.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return notes
+    return payload
+
+
+def fetch_notes(source: KaraokeSource, force: bool = False) -> list[dict[str, Any]]:
+    return list(fetch_timing(source, force=force)["notes"])
 
 
 def _map_word_targets(
