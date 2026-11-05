@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,9 +11,103 @@ import numpy as np
 from .audio import load_or_extract
 from .candidates import load_or_build_candidates
 from .config import CANDIDATE_DIR, MODEL_PATH, SONGS_DIR, STATE_DIR, ensure_dirs
-from .maps import Song, load_song, write_json
+from .maps import Song, flatten_words, load_song, write_json
 from .notes import build_map_document, build_notes
 from .policy import load_checkpoint, sample_actions
+
+
+def _ensure_word_coverage(
+    song: Song,
+    candidates,
+    actions: dict[str, np.ndarray],
+    notes: list[dict],
+) -> list[dict]:
+    """Guarantee at least one note for each timed lyric word when possible."""
+    words = flatten_words(song.lines)
+    if not words:
+        return notes
+    for _ in range(3):
+        changed = False
+        for word in words:
+            covered = any(
+                note["start"] < word.end + 0.15
+                and note["start"] + note["dur"] > word.start - 0.15
+                for note in notes
+            )
+            if covered:
+                continue
+            mask = (
+                (candidates.starts >= word.start - 0.30)
+                & (candidates.starts <= word.end + 0.30)
+                & (actions["selected"] == 0)
+            )
+            options = np.where(mask)[0]
+            if options.size == 0:
+                continue
+            best = int(options[int(np.argmax(actions["select_prob"][options]))])
+            actions["selected"][best] = 1
+            changed = True
+        if not changed:
+            break
+        notes = build_notes(candidates, actions, song_duration=song.duration)
+
+    # If NMS still dropped a forced proposal, insert a gap-sized note at the
+    # word start. This keeps intros and quiet lyric lines from being empty.
+    notes.sort(key=lambda note: float(note["start"]))
+    for word in words:
+        covered = any(
+            note["start"] < word.end + 0.15
+            and note["start"] + note["dur"] > word.start - 0.15
+            for note in notes
+        )
+        if covered:
+            continue
+        mask = (candidates.starts >= word.start - 0.30) & (
+            candidates.starts <= word.end + 0.30
+        )
+        options = np.where(mask)[0]
+        if options.size == 0:
+            continue
+        best = int(options[int(np.argmax(actions["select_prob"][options]))])
+        previous_end = max(
+            (float(note["start"]) + float(note["dur"]) for note in notes if note["start"] < word.start),
+            default=0.0,
+        )
+        next_start = min(
+            (float(note["start"]) for note in notes if note["start"] > word.start),
+            default=song.duration,
+        )
+        start = max(float(word.start), previous_end + 0.02)
+        if start >= next_start - 0.08:
+            continue
+        duration = min(
+            4.0,
+            max(0.15, float(candidates.durations[best]) * float(np.exp(actions["log_scale"][best]))),
+            next_start - start - 0.02,
+        )
+        if duration < 0.08:
+            continue
+        midi = int(
+            np.clip(
+                round(float(candidates.midis[best]) + float(actions["pitch_offset"][best])),
+                24,
+                96,
+            )
+        )
+        notes.append(
+            {
+                "start": round(start, 3),
+                "dur": round(duration, 3),
+                "midi": midi,
+                "vel": 0.8,
+                "word": None,
+                "wordIndex": None,
+                "line": None,
+                "ribbon": None,
+            }
+        )
+        notes.sort(key=lambda note: float(note["start"]))
+    return notes
 
 
 def _slug(value: str) -> str:
@@ -65,6 +160,8 @@ def generate_candidate(
     desired_notes = max(12, int(song.duration * 0.70))
     # Over-propose: NMS and the density cap remove overlapping notes.
     target_candidates = max(desired_notes, int(desired_notes * 2.5))
+    if seed is None:
+        seed = random.SystemRandom().randrange(1, 2**63)
     actions = sample_actions(
         checkpoint.model,
         normalized,
@@ -80,6 +177,7 @@ def generate_candidate(
         forced[order[:24]] = 1
         actions["selected"] = forced
         notes = build_notes(candidates, actions, song_duration=song.duration)
+    notes = _ensure_word_coverage(song, candidates, actions, notes)
     if len(notes) == 0:
         raise RuntimeError("the policy produced no notes; lower the threshold or retrain")
 

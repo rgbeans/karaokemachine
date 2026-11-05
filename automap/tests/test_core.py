@@ -72,6 +72,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(document["format"], "karaokemachine-level")
         self.assertEqual(document["low"], 58)
         self.assertEqual(document["high"], 64)
+        # Word pills follow the generated note that carries the word.
+        self.assertAlmostEqual(document["placedWords"][0]["start"], 1.25)
+        self.assertAlmostEqual(document["placedWords"][1]["start"], 2.25)
 
     def test_targets_are_the_other_albums_and_exclude_man_in_the_box(self) -> None:
         import json

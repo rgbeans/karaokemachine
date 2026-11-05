@@ -11,11 +11,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .config import PACKAGE_DIR
+import numpy as np
+
+from .config import MODEL_PATH, PACKAGE_DIR
 from .dataset import TrackData, load_track
 from .generate import generate_candidate, pending_path
 from .grade import load_pending, update_from_grade
 from .maps import Song, load_approved_tracks, load_song
+from .policy import load_checkpoint
 from .queue import (
     QueueState,
     Target,
@@ -65,6 +68,7 @@ class Session:
         self.current_song: Song | None = None
         self.state: dict[str, Any] | None = None
         self.last_event: dict[str, Any] | None = None
+        self.network_cache: tuple[tuple[int, int], dict[str, Any]] | None = None
         self._resume_or_generate()
 
     def _song(self, song_id: str) -> Song:
@@ -79,6 +83,63 @@ class Session:
             if target.song_id == song_id:
                 return index
         return None
+
+    def _network_summary(self) -> dict[str, Any] | None:
+        if not MODEL_PATH.exists():
+            return None
+        try:
+            stat = MODEL_PATH.stat()
+            cache_key = (stat.st_mtime_ns, stat.st_size)
+            if self.network_cache is not None and self.network_cache[0] == cache_key:
+                return self.network_cache[1]
+            checkpoint = load_checkpoint(MODEL_PATH)
+            weights = checkpoint.model.state_dict()
+
+            def normalize(values: list[float]) -> list[float]:
+                array = np.asarray(values, dtype=np.float32)
+                low, high = float(array.min()), float(array.max())
+                if high - low < 1e-8:
+                    return [0.5 for _ in values]
+                return [round(float((value - low) / (high - low)), 4) for value in array]
+
+            def bucket(values, count: int) -> list[float]:
+                array = np.asarray(values, dtype=np.float32)
+                return [float(group.mean()) for group in np.array_split(array, count)]
+
+            input_values = (
+                weights["network.0.weight"].detach().abs().mean(dim=0).cpu().numpy()
+            )
+            hidden_one = (
+                weights["network.0.weight"].detach().abs().mean(dim=1).cpu().numpy()
+            )
+            hidden_two = (
+                weights["network.3.weight"].detach().abs().mean(dim=1).cpu().numpy()
+            )
+            output_values = (
+                weights["network.5.weight"].detach().abs().mean(dim=1).cpu().numpy()
+            )
+            layers = [
+                normalize(bucket(input_values, 8)),
+                normalize(bucket(hidden_one, 12)),
+                normalize(bucket(hidden_two, 12)),
+                normalize(bucket(output_values, 4)),
+            ]
+            loss = None
+            reward = None
+            if self.last_event and self.last_event.get("kind") == "grade":
+                loss = self.last_event.get("loss")
+                reward = self.last_event.get("reward")
+            summary = {
+                "step": checkpoint.step,
+                "layers": layers,
+                "loss": float(loss) if loss is not None else None,
+                "reward": float(reward) if reward is not None else None,
+                "updated": bool(self.last_event and self.last_event.get("kind") == "grade"),
+            }
+            self.network_cache = (cache_key, summary)
+            return summary
+        except Exception:
+            return None
 
     def _set_state(self, info: dict[str, Any]) -> None:
         target = self.current_target
@@ -129,6 +190,7 @@ class Session:
             "grades_for_song": int(progress.get("graded") or 0),
             "generated_for_song": int(progress.get("generated") or 0),
             "last_event": self.last_event,
+            "network": self._network_summary(),
             "next_title": next_target.title,
             "next_album": next_target.album,
         }
@@ -220,6 +282,10 @@ class Session:
                 "album": self.current_target.album,
                 "grades_for_song": int(graded_progress.get("graded") or 0),
                 "action": "retry" if retry else "next",
+                "advantage": float(record.get("advantage") or 0.0),
+                "policy_loss": float(record.get("policy_loss") or 0.0),
+                "anchor_loss": float(record.get("anchor_loss") or 0.0),
+                "loss": float(record.get("loss") or 0.0),
             }
             if retry:
                 try:

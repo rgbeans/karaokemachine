@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from .config import (
     FEEDBACK_PATH,
     MODEL_PATH,
+    POLICY_GRADIENT_SCALE,
     REWARD_BY_GRADE,
     ensure_dirs,
 )
@@ -129,7 +130,10 @@ def update_from_grade(
         log_prob, entropy = action_log_prob(
             model, normalized, actions, selection_bias=selection_bias
         )
-        policy_loss = -advantage * log_prob.mean() - entropy_beta * entropy.mean()
+        policy_loss = (
+            -advantage * log_prob.mean() * POLICY_GRADIENT_SCALE
+            - entropy_beta * entropy.mean()
+        )
         anchor = _anchor_loss(model, anchor_data, rng)
         loss = policy_loss + anchor_weight * anchor
         optimizer.zero_grad()

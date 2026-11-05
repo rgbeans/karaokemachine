@@ -85,6 +85,10 @@ SELECT_TEMPERATURE = 1.0
 # Grading map. 3 is neutral and performs no update.
 REWARD_BY_GRADE = {1: -1.0, 2: -0.5, 3: 0.0, 4: 0.5, 5: 1.0}
 
+# The policy log-prob is averaged over thousands of proposals. Scale it so one
+# human grade has a visible effect while the supervised anchor keeps it stable.
+POLICY_GRADIENT_SCALE = 10.0
+
 
 def ensure_dirs() -> None:
     for path in (CACHE_DIR, CHECKPOINT_DIR, CANDIDATE_DIR, STATE_DIR):

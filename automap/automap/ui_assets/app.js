@@ -1,5 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const canvas = $('canvas');
+const networkCanvas = $('networkCanvas');
+const networkMeta = $('networkMeta');
 const vocals = $('vocals');
 const backing = $('backing');
 const seek = $('seek');
@@ -9,6 +11,8 @@ let raf = 0;
 let vocalsOn = true;
 let backingOn = true;
 let seeking = false;
+let networkPreviousLayers = null;
+let networkPulseUntil = 0;
 
 function formatTime(value) {
   const seconds = Math.max(0, Number(value) || 0);
@@ -116,14 +120,19 @@ function applyState(next) {
   const hadState = Boolean(state);
   const previousSong = state && state.song_id;
   const previousCandidate = state && state.candidate_id;
+  const previousLayers = state && state.network ? state.network.layers : null;
   const songChanged = !hadState || previousSong !== next.song_id;
   const candidateChanged = !hadState || previousCandidate !== next.candidate_id;
   state = next;
+  networkPreviousLayers = previousLayers;
+  if (state.last_event && state.last_event.kind === 'grade') {
+    networkPulseUntil = performance.now() + 1200;
+  }
 
   $('queue').textContent = `${(state.album || '').toUpperCase()} · ${state.song_index}/${state.song_total} · ROUND ${state.round}`;
   $('title').textContent = state.title || 'Untitled';
   $('artist').textContent = state.artist || '';
-  $('meta').textContent = `${state.note_count} notes · model step ${state.model_step}`;
+  $('meta').textContent = `${state.note_count} notes · take ${state.generated_for_song} · step ${state.model_step}`;
   $('status').textContent = statusFor(state);
 
   if (songChanged) {
@@ -158,6 +167,7 @@ function applyState(next) {
   seek.max = String(songDuration());
   if (candidateChanged) seek.value = '0';
   draw();
+  drawNetwork();
 }
 
 function hslFor(midi, low, high) {
@@ -224,6 +234,101 @@ function drawPlacedWords(ctx, time, windowStart, windowSpan, xFor, padX, padY, i
     ctx.fillStyle = active ? '#ffffff' : 'rgba(244,247,251,0.78)';
     ctx.fillText(display, centerX, centerY);
   }
+}
+
+function drawNetwork() {
+  const ctx = networkCanvas.getContext('2d');
+  const cssWidth = 232;
+  const cssHeight = 92;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const pixelWidth = Math.round(cssWidth * dpr);
+  const pixelHeight = Math.round(cssHeight * dpr);
+  if (networkCanvas.width !== pixelWidth || networkCanvas.height !== pixelHeight) {
+    networkCanvas.width = pixelWidth;
+    networkCanvas.height = pixelHeight;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  if (!state || !state.network) {
+    networkMeta.textContent = 'step —';
+    networkMeta.classList.remove('updated');
+    return;
+  }
+  const layers = state.network.layers || [];
+  if (layers.length < 2) return;
+  const marginX = 12;
+  const marginY = 9;
+  const positions = layers.map((values, layerIndex) =>
+    values.map((value, nodeIndex) => ({
+      x: marginX + (layerIndex / (layers.length - 1)) * (cssWidth - marginX * 2),
+      y: marginY + ((nodeIndex + 0.5) / values.length) * (cssHeight - marginY * 2),
+      value
+    }))
+  );
+  const now = performance.now();
+  const pulsing = now < networkPulseUntil;
+
+  for (let layerIndex = 0; layerIndex < positions.length - 1; layerIndex += 1) {
+    for (const from of positions[layerIndex]) {
+      for (const to of positions[layerIndex + 1]) {
+        const strength = (from.value + to.value) / 2;
+        ctx.strokeStyle = `rgba(124,247,196,${0.035 + strength * 0.11 + (pulsing ? 0.07 : 0)})`;
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  let totalDelta = 0;
+  let deltaCount = 0;
+  for (let layerIndex = 0; layerIndex < positions.length; layerIndex += 1) {
+    for (let nodeIndex = 0; nodeIndex < positions[layerIndex].length; nodeIndex += 1) {
+      const node = positions[layerIndex][nodeIndex];
+      const previous = networkPreviousLayers && networkPreviousLayers[layerIndex];
+      let changed = false;
+      if (previous && previous[nodeIndex] !== undefined) {
+        const delta = Math.abs(previous[nodeIndex] - node.value);
+        totalDelta += delta;
+        deltaCount += 1;
+        changed = delta > 0.00005;
+      }
+      const radius = 1.4 + node.value * 2.6;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(124,247,196,${0.35 + node.value * 0.65})`;
+      ctx.fill();
+      if (changed) {
+        ctx.strokeStyle = 'rgba(255,209,102,0.88)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 2.2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  if (pulsing) {
+    const progress = 1 - (networkPulseUntil - now) / 1200;
+    const x = marginX + Math.max(0, Math.min(1, progress)) * (cssWidth - marginX * 2);
+    ctx.strokeStyle = 'rgba(255,209,102,0.30)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, marginY - 2);
+    ctx.lineTo(x, cssHeight - marginY + 2);
+    ctx.stroke();
+  }
+
+  const reward = state.network.reward != null
+    ? ` · reward ${Number(state.network.reward) > 0 ? '+' : ''}${Number(state.network.reward).toFixed(1)}`
+    : '';
+  const delta = state.network.updated && deltaCount > 0
+    ? ` · Δ ${(totalDelta / deltaCount).toFixed(5)}`
+    : '';
+  networkMeta.textContent = `step ${state.network.step}${reward}${delta}${state.network.updated ? ' · updated' : ''}`;
+  networkMeta.classList.toggle('updated', Boolean(state.network.updated));
 }
 
 function resizeCanvas() {
@@ -330,6 +435,7 @@ function tick() {
   if (state) {
     if (!seeking) seek.value = String(currentTime());
     draw();
+    if (performance.now() < networkPulseUntil) drawNetwork();
   }
   raf = requestAnimationFrame(tick);
 }

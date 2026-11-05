@@ -32,11 +32,13 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 3. Proposes note onsets from vocal onsets, word starts and voiced segments.
 4. A small neural policy scores each proposal and predicts pitch correction,
    onset correction and note duration.
-5. Writes a playable draft map with notes, ribbons, lyric lines, and placed
+5. Ensures every timed lyric word with a nearby vocal proposal gets at least one
+   note, so intros and quiet lyric lines are not empty.
+6. Writes a playable draft map with notes, ribbons, lyric lines, and placed
    lyric words:
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
-6. Plays the map in the grading window. A thumbs-down updates the policy and
+7. Plays the map in the grading window. A thumbs-down updates the policy and
    generates another candidate for the same song; a thumbs-up updates the
    policy and advances to the next song.
 
@@ -90,9 +92,14 @@ playhead, so the notes are readable instead of squeezing the whole song into one
 view.
 
 The map's placed lyric words are drawn as pills at their mapped times and
-vertical positions. The active word gets a gold underline. This is the same
-`placedWords` data the KaraokeMachine stage uses, so what you grade is what the
-app plays.
+vertical positions. The active word gets a gold underline. The pills follow the
+generated note that carries each word, so a new take moves the lyric placements.
+This is the same `placedWords` data the KaraokeMachine stage uses, so what you
+grade is what the app plays.
+
+The top-right **POLICY NET** panel shows the live policy network, model step,
+last loss and the normalized weight delta after a grade. A grade pulses the
+network, highlights changed nodes in gold, and increments the `take N` counter.
 
 The transport has:
 
@@ -185,10 +192,12 @@ distributions for pitch, onset and duration corrections.
 
 Each update uses:
 
-- REINFORCE with a moving-average reward baseline
+- REINFORCE with a moving-average reward baseline, scaled so one human grade has
+  a visible effect
 - entropy regularization
 - a supervised replay anchor on the approved Man in the Box map, so the policy
   does not forget the only good example
+- a live step/loss/weight-delta readout in the POLICY NET panel
 
 Candidates are draft map files. Once a candidate is good enough, open it in the
 KaraokeMachine editor and submit it like any other map.
@@ -222,9 +231,11 @@ and never embeds audio in a map.
   fully generalize. The grading loop is how it adapts across the 30 targets.
 - The pitch tracker misses about 10 of the 184 approved notes; those notes are
   excluded from the supervised selection labels.
-- Lyric words are placed at their timed positions from the song's synced
-  lyrics. Their vertical positions follow nearby generated notes; the model does
-  not yet learn word y-positions from the approved map.
+- Lyric words use the song's synced timings. Their pill position follows the
+  generated note that carries the word; the model does not yet learn word
+  placements directly from the approved map.
+- Coverage notes are forced at timed words when the policy would otherwise leave
+  a lyric line empty. They are a safety net, not a separate learned model.
 - The target songs already have draft maps on disk, but those drafts are never
   used as training data or as generation seeds.
 - The generated map is a starting point, not a replacement for submitting a

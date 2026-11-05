@@ -110,17 +110,28 @@ def place_words(song: Song, notes: list[dict[str, Any]]) -> list[dict[str, Any]]
         candidates = [
             note
             for note in notes
-            if note["start"] <= word.end + 0.18 and note["start"] + note["dur"] >= word.start - 0.18
+            if note["start"] <= word.end + 0.18
+            and note["start"] + note["dur"] >= word.start - 0.18
         ]
         if candidates:
-            note = min(candidates, key=lambda item: abs(float(item["start"]) - word.start))
+            # The word pill follows the generated note that carries the word,
+            # so a new candidate visibly moves its lyric placements.
+            note = max(
+                candidates,
+                key=lambda item: min(
+                    float(item["start"]) + float(item["dur"]), word.end + 0.18
+                )
+                - max(float(item["start"]), word.start - 0.18),
+            )
+            start = float(note["start"]) + float(note["dur"]) * 0.5
             y = 0.5 - (float(note["midi"]) - center) / span * 0.42
         else:
+            start = float(word.start)
             y = 0.5
         placed.append(
             {
                 "text": word.text,
-                "start": round(float(word.start), 3),
+                "start": round(start, 3),
                 "y": round(float(np.clip(y, 0.12, 0.88)), 4),
                 "line": word.line,
                 "wordIndex": word.word_index,
