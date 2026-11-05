@@ -627,6 +627,29 @@ mod tests {
     }
 
     #[test]
+    fn the_published_man_in_the_box_map_parses() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../site/maps/man-in-the-box-alice-in-chains-yt-H1i5HaQV9ck.json");
+        let map = MapPackage::load(&path).expect("published Man in the Box map");
+        assert_eq!(map.id, "yt-H1i5HaQV9ck");
+        assert!(!map.no_audio);
+        assert!(map.source_url.starts_with("https://www.youtube.com/"));
+        assert_eq!(map.notes.len(), 184);
+        assert_eq!(map.lines.len(), 16);
+        assert_eq!(map.placed_words.len(), 125);
+        assert_eq!(map.custom_words.len(), 7);
+        assert_eq!(map.ribbon_links.len(), 69);
+        assert!(map.cover.is_some());
+        assert_eq!(
+            map.custom_words
+                .iter()
+                .filter(|word| word.text == "a".repeat(20))
+                .count(),
+            6
+        );
+    }
+
+    #[test]
     fn the_published_salve_map_is_a_no_audio_package() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
             "../site/maps/salve-regina-simple-tone-traditional-gregorian-chant-salve-regina.json",

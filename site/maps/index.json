@@ -1,6 +1,26 @@
 {
   "maps": [
     {
+      "id": "yt-H1i5HaQV9ck",
+      "title": "Man in the Box",
+      "artist": "Alice in Chains",
+      "album": "Facelift",
+      "releaseDate": "",
+      "duration": 285.21,
+      "sourceUrl": "https://www.youtube.com/watch?v=H1i5HaQV9ck",
+      "noAudio": false,
+      "file": "man-in-the-box-alice-in-chains-yt-H1i5HaQV9ck.json",
+      "cover": "covers/yt-H1i5HaQV9ck.jpg",
+      "notes": 184,
+      "lyrics": 16,
+      "contributor": "rgbeans",
+      "tags": [
+        "Imported",
+        "AI split",
+        "Mapped"
+      ]
+    },
+    {
       "id": "salve-regina",
       "title": "Salve Regina (Simple Tone)",
       "artist": "Traditional Gregorian Chant",
