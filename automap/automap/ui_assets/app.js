@@ -174,10 +174,56 @@ function visibleWindow() {
   return { start, span };
 }
 
-function lyricAt(time) {
-  if (!state || !Array.isArray(state.lines)) return '';
-  const line = state.lines.find((item) => time >= item.start - 0.2 && time <= item.end + 0.4);
-  return line ? line.text : '';
+function roundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function drawPlacedWords(ctx, time, windowStart, windowSpan, xFor, padX, padY, innerW, innerH, width) {
+  if (!state || !Array.isArray(state.placedWords)) return;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const word of state.placedWords) {
+    if (word.start < windowStart - 1.5 || word.start > windowStart + windowSpan + 0.5) continue;
+    const text = String(word.text || '');
+    if (!text) continue;
+    const active = Math.abs(time - word.start) <= 0.45;
+    const display = text.length > 24 ? `${text.slice(0, 23)}…` : text;
+    ctx.font = active
+      ? '600 13px Inter, ui-sans-serif, system-ui, sans-serif'
+      : '500 11px Inter, ui-sans-serif, system-ui, sans-serif';
+    const pillWidth = Math.min(190, ctx.measureText(display).width + 14);
+    const pillHeight = active ? 24 : 21;
+    const half = pillWidth / 2 + 2;
+    const centerX = Math.max(padX + half, Math.min(width - padX - half, xFor(word.start)));
+    const rawY = padY + Math.max(0.02, Math.min(0.98, Number(word.y) || 0.5)) * innerH;
+    const centerY = Math.max(
+      padY + pillHeight / 2 + 2,
+      Math.min(padY + innerH - pillHeight / 2 - 2, rawY)
+    );
+    roundedRect(ctx, centerX - pillWidth / 2, centerY - pillHeight / 2, pillWidth, pillHeight, 5);
+    ctx.fillStyle = active ? 'rgba(5,8,15,0.90)' : 'rgba(5,8,15,0.62)';
+    ctx.fill();
+    ctx.strokeStyle = active ? 'rgba(255,209,102,0.65)' : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (active) {
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(centerX - pillWidth / 2 + 5, centerY + pillHeight / 2 + 2);
+      ctx.lineTo(centerX + pillWidth / 2 - 5, centerY + pillHeight / 2 + 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = active ? '#ffffff' : 'rgba(244,247,251,0.78)';
+    ctx.fillText(display, centerX, centerY);
+  }
 }
 
 function resizeCanvas() {
@@ -273,7 +319,9 @@ function draw() {
   ctx.lineTo(playX, height - padY);
   ctx.stroke();
 
-  $('lyric').textContent = lyricAt(time);
+  // The mapped lyric labels sit at their actual time and vertical position.
+  drawPlacedWords(ctx, time, start, span, xFor, padX, padY, innerW, innerH, width);
+
   $('time').textContent = `${formatTime(time)} / ${formatTime(songDuration())}`;
 }
 

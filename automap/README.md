@@ -32,7 +32,8 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 3. Proposes note onsets from vocal onsets, word starts and voiced segments.
 4. A small neural policy scores each proposal and predicts pitch correction,
    onset correction and note duration.
-5. Writes a playable draft map:
+5. Writes a playable draft map with notes, ribbons, lyric lines, and placed
+   lyric words:
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
 6. Plays the map in the grading window. A thumbs-down updates the policy and
@@ -86,7 +87,14 @@ This starts `http://127.0.0.1:8765/` and opens it in your browser.
 
 The window shows a **sidescrolling preview** of about 14 seconds around the
 playhead, so the notes are readable instead of squeezing the whole song into one
-view. The transport has:
+view.
+
+The map's placed lyric words are drawn as pills at their mapped times and
+vertical positions. The active word gets a gold underline. This is the same
+`placedWords` data the KaraokeMachine stage uses, so what you grade is what the
+app plays.
+
+The transport has:
 
 - **PLAY / PAUSE**
 - a whole-song seek bar
@@ -214,6 +222,9 @@ and never embeds audio in a map.
   fully generalize. The grading loop is how it adapts across the 30 targets.
 - The pitch tracker misses about 10 of the 184 approved notes; those notes are
   excluded from the supervised selection labels.
+- Lyric words are placed at their timed positions from the song's synced
+  lyrics. Their vertical positions follow nearby generated notes; the model does
+  not yet learn word y-positions from the approved map.
 - The target songs already have draft maps on disk, but those drafts are never
   used as training data or as generation seeds.
 - The generated map is a starting point, not a replacement for submitting a
