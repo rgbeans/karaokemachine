@@ -1,24 +1,177 @@
 const $ = (id) => document.getElementById(id);
 const canvas = $('canvas');
-const audio = $('audio');
+const vocals = $('vocals');
+const backing = $('backing');
+const seek = $('seek');
 let state = null;
 let busy = false;
 let raf = 0;
+let vocalsOn = true;
+let backingOn = true;
+let seeking = false;
 
 function formatTime(value) {
   const seconds = Math.max(0, Number(value) || 0);
   return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 }
 
-function setAudioTime(value) {
-  try { audio.currentTime = value; } catch { /* metadata not ready yet */ }
+function setElementTime(element, value) {
+  try { element.currentTime = value; } catch { /* metadata not ready yet */ }
+}
+
+function trackAvailable(kind) {
+  return Boolean(state && state.audio && state.audio[`${kind}_available`]);
+}
+
+function masterElement() {
+  if (trackAvailable('backing')) return backing;
+  if (trackAvailable('vocals')) return vocals;
+  return null;
+}
+
+function currentTime() {
+  const master = masterElement();
+  return master ? Number(master.currentTime) || 0 : 0;
+}
+
+function songDuration() {
+  return state ? Math.max(1, Number(state.duration) || 1) : 1;
+}
+
+function setTime(value) {
+  const time = Math.max(0, Math.min(songDuration(), Number(value) || 0));
+  if (trackAvailable('vocals')) setElementTime(vocals, time);
+  if (trackAvailable('backing')) setElementTime(backing, time);
+  seek.value = String(time);
+  draw();
+}
+
+function updateToggleLabels() {
+  const vocalsReady = trackAvailable('vocals');
+  const backingReady = trackAvailable('backing');
+  $('vocalsToggle').disabled = !vocalsReady;
+  $('backingToggle').disabled = !backingReady;
+  $('vocalsToggle').classList.toggle('on', vocalsOn && vocalsReady);
+  $('backingToggle').classList.toggle('on', backingOn && backingReady);
+  $('vocalsToggle').textContent = `VOCALS ${vocalsOn && vocalsReady ? 'ON' : 'OFF'}`;
+  $('backingToggle').textContent = `BACKING ${backingOn && backingReady ? 'ON' : 'OFF'}`;
+  $('vocalsToggle').setAttribute('aria-pressed', String(vocalsOn && vocalsReady));
+  $('backingToggle').setAttribute('aria-pressed', String(backingOn && backingReady));
+  vocals.muted = !vocalsOn || !vocalsReady;
+  backing.muted = !backingOn || !backingReady;
+}
+
+function syncAudio() {
+  const vocalsReady = trackAvailable('vocals');
+  const backingReady = trackAvailable('backing');
+  if (!vocalsReady || !backingReady) return;
+  if (vocals.readyState < 2 || backing.readyState < 2) return;
+  if (vocals.paused && backing.paused) return;
+  const master = masterElement();
+  if (!master) return;
+  const slave = master === backing ? vocals : backing;
+  if (Math.abs(slave.currentTime - master.currentTime) > 0.08) {
+    setElementTime(slave, master.currentTime);
+  }
+}
+
+function activeElements() {
+  return [vocals, backing].filter((element) =>
+    element === vocals ? trackAvailable('vocals') : trackAvailable('backing')
+  );
+}
+
+async function playAll() {
+  const elements = activeElements();
+  if (!elements.length) return;
+  await Promise.allSettled(elements.map((element) => element.play()));
+  $('play').textContent = elements.some((element) => !element.paused) ? 'PAUSE' : 'PLAY';
+}
+
+function pauseAll() {
+  vocals.pause();
+  backing.pause();
+  $('play').textContent = 'PLAY';
+}
+
+function statusFor(state) {
+  if (state.last_event) {
+    const event = state.last_event;
+    if (event.kind === 'grade') {
+      const good = Number(event.reward) > 0;
+      $('status').className = `status ${good ? 'positive' : 'negative'}`;
+      if (event.action === 'retry') {
+        return `last BAD on ${event.title} · ${event.grades_for_song || 0} graded there · another candidate for this song`;
+      }
+      return `last ${good ? 'GOOD' : 'BAD'} on ${event.title} · ${event.grades_for_song || 0} graded there · next ${state.next_title}`;
+    }
+    $('status').className = 'status';
+    return `skipped ${event.title} · next ${state.next_title}`;
+  }
+  $('status').className = 'status';
+  return `round ${state.round} · ${state.song_index}/${state.song_total} · ${state.grades_for_song} graded here · listen, then grade`;
+}
+
+function applyState(next) {
+  const hadState = Boolean(state);
+  const previousSong = state && state.song_id;
+  const previousCandidate = state && state.candidate_id;
+  const songChanged = !hadState || previousSong !== next.song_id;
+  const candidateChanged = !hadState || previousCandidate !== next.candidate_id;
+  state = next;
+
+  $('queue').textContent = `${(state.album || '').toUpperCase()} · ${state.song_index}/${state.song_total} · ROUND ${state.round}`;
+  $('title').textContent = state.title || 'Untitled';
+  $('artist').textContent = state.artist || '';
+  $('meta').textContent = `${state.note_count} notes · model step ${state.model_step}`;
+  $('status').textContent = statusFor(state);
+
+  if (songChanged) {
+    pauseAll();
+    if (trackAvailable('vocals')) vocals.src = state.audio.vocals;
+    else vocals.removeAttribute('src');
+    if (trackAvailable('backing')) backing.src = state.audio.backing;
+    else backing.removeAttribute('src');
+    vocals.load();
+    backing.load();
+    setElementTime(vocals, 0);
+    setElementTime(backing, 0);
+    const resume = Number(state.resume_position) || 0;
+    if (resume > 0.5) {
+      const restore = () => {
+        setElementTime(vocals, resume);
+        setElementTime(backing, resume);
+        seek.value = String(resume);
+        draw();
+      };
+      vocals.addEventListener('loadedmetadata', restore, { once: true });
+      backing.addEventListener('loadedmetadata', restore, { once: true });
+    }
+  } else if (candidateChanged) {
+    pauseAll();
+    setElementTime(vocals, 0);
+    setElementTime(backing, 0);
+  }
+
+  updateToggleLabels();
+  $('play').disabled = !trackAvailable('vocals') && !trackAvailable('backing');
+  seek.max = String(songDuration());
+  if (candidateChanged) seek.value = '0';
+  draw();
 }
 
 function hslFor(midi, low, high) {
   const span = Math.max(1, high - low);
   const t = Math.min(1, Math.max(0, (midi - low) / span));
-  // Low notes are cyan, middle notes green, high notes red.
   return `hsl(${Math.round(190 - t * 190)}, 82%, 64%)`;
+}
+
+function visibleWindow() {
+  const duration = songDuration();
+  const span = Math.min(14, duration);
+  let start = currentTime() - span * 0.28;
+  start = Math.max(0, Math.min(Math.max(0, duration - span), start));
+  return { start, span };
 }
 
 function lyricAt(time) {
@@ -52,13 +205,13 @@ function draw() {
   const padY = 30;
   const innerW = Math.max(1, width - padX * 2);
   const innerH = Math.max(1, height - padY * 2);
-  const duration = Math.max(1, state.duration);
+  const { start, span } = visibleWindow();
   const low = state.low;
   const high = state.high;
   const yFor = (midi) => padY + innerH - ((midi - low) / Math.max(1, high - low)) * innerH;
-  const xFor = (time) => padX + (time / duration) * innerW;
+  const xFor = (time) => padX + ((time - start) / span) * innerW;
 
-  // Faint pitch lanes and time grid.
+  // Faint pitch lanes.
   ctx.lineWidth = 1;
   for (let lane = 0; lane <= 8; lane += 1) {
     const y = padY + (innerH / 8) * lane;
@@ -68,12 +221,15 @@ function draw() {
     ctx.lineTo(width - padX, y);
     ctx.stroke();
   }
-  const tick = duration > 240 ? 60 : duration > 120 ? 30 : 15;
+
+  // Time grid and labels.
+  const tick = span > 18 ? 5 : span > 9 ? 2 : 1;
+  const firstTick = Math.ceil(start / tick) * tick;
   ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
-  ctx.fillStyle = 'rgba(255,255,255,0.32)';
-  for (let time = 0; time <= duration; time += tick) {
+  ctx.fillStyle = 'rgba(255,255,255,0.34)';
+  for (let time = firstTick; time <= start + span + 0.01; time += tick) {
     const x = xFor(time);
-    ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.beginPath();
     ctx.moveTo(x, padY);
     ctx.lineTo(x, height - padY);
@@ -81,13 +237,16 @@ function draw() {
     ctx.fillText(formatTime(time), x + 4, height - 8);
   }
 
-  // Note bars.
+  // Notes in the visible window.
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const noteHeight = Math.max(5, Math.min(13, innerH / Math.max(10, high - low) * 0.72));
   for (const note of state.notes || []) {
-    const x = xFor(note.start);
-    const w = Math.max(noteHeight, xFor(note.start + note.dur) - x);
+    if (note.start + note.dur < start - 0.2 || note.start > start + span + 0.2) continue;
+    const leftTime = Math.max(note.start, start);
+    const rightTime = Math.min(note.start + note.dur, start + span);
+    const x = xFor(leftTime);
+    const w = Math.max(noteHeight, xFor(rightTime) - x);
     const y = yFor(note.midi);
     ctx.strokeStyle = hslFor(note.midi, low, high);
     ctx.lineWidth = noteHeight;
@@ -100,8 +259,8 @@ function draw() {
   }
   ctx.shadowBlur = 0;
 
-  // Playhead.
-  const time = Math.min(duration, Math.max(0, audio.currentTime || 0));
+  // Fixed playhead in the scrolling window.
+  const time = currentTime();
   const playX = xFor(time);
   const gradient = ctx.createLinearGradient(0, padY, 0, height - padY);
   gradient.addColorStop(0, 'rgba(255,255,255,0.0)');
@@ -115,11 +274,15 @@ function draw() {
   ctx.stroke();
 
   $('lyric').textContent = lyricAt(time);
-  $('time').textContent = `${formatTime(time)} / ${formatTime(duration)}`;
+  $('time').textContent = `${formatTime(time)} / ${formatTime(songDuration())}`;
 }
 
 function tick() {
-  draw();
+  syncAudio();
+  if (state) {
+    if (!seeking) seek.value = String(currentTime());
+    draw();
+  }
   raf = requestAnimationFrame(tick);
 }
 
@@ -131,30 +294,6 @@ function setBusy(value, message) {
   $('loading').hidden = !value;
   if (message) $('loading-text').textContent = message;
   if (!value) draw();
-}
-
-function applyState(next) {
-  const previousCandidate = state && state.candidate_id;
-  state = next;
-  $('title').textContent = state.title || 'Untitled';
-  $('artist').textContent = state.artist || '';
-  $('meta').textContent = `${state.note_count} notes · model step ${state.model_step}`;
-  const reward = state.last_reward;
-  if (typeof reward === 'number' && reward !== 0) {
-    $('status').className = `status ${reward > 0 ? 'positive' : 'negative'}`;
-    $('status').textContent = `last grade ${reward > 0 ? 'GOOD' : 'BAD'} · ${state.note_count} notes · step ${state.model_step}`;
-  } else {
-    $('status').className = 'status';
-    $('status').textContent = `${state.note_count} notes · step ${state.model_step} · listen, then grade`;
-  }
-  if (!previousCandidate || previousCandidate !== state.candidate_id) {
-    audio.pause();
-    audio.src = state.audio_url;
-    setAudioTime(0);
-    audio.load();
-    $('play').textContent = 'PLAY';
-  }
-  draw();
 }
 
 async function request(url, options = {}) {
@@ -174,7 +313,9 @@ async function loadState() {
 
 async function grade(value) {
   if (!state || busy) return;
-  setBusy(true, value > 0 ? 'Reinforcing the good map and generating the next…' : 'Reinforcing the bad map and generating the next…');
+  setBusy(true, value > 0
+    ? 'Reinforcing the good map and continuing the queue…'
+    : 'Reinforcing the bad map and continuing the queue…');
   try {
     const payload = await request('/api/grade', {
       method: 'POST',
@@ -191,7 +332,7 @@ async function grade(value) {
 
 async function nextCandidate() {
   if (!state || busy) return;
-  setBusy(true, 'Generating another candidate…');
+  setBusy(true, 'Skipping this candidate and continuing the queue…');
   try {
     const payload = await request('/api/next', { method: 'POST' });
     applyState(payload.state);
@@ -202,40 +343,79 @@ async function nextCandidate() {
   }
 }
 
+function sendPosition(beacon = false) {
+  if (!state) return;
+  const payload = JSON.stringify({
+    candidate_id: state.candidate_id,
+    seconds: currentTime()
+  });
+  if (beacon && navigator.sendBeacon) {
+    navigator.sendBeacon('/api/position', new Blob([payload], { type: 'application/json' }));
+    return;
+  }
+  fetch('/api/position', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true
+  }).catch(() => {});
+}
+
 $('down').addEventListener('click', () => grade(1));
 $('up').addEventListener('click', () => grade(5));
 $('next').addEventListener('click', nextCandidate);
-$('play').addEventListener('click', () => {
-  if (audio.paused) {
-    audio.play().then(() => { $('play').textContent = 'PAUSE'; }).catch(() => {});
-  } else {
-    audio.pause();
-    $('play').textContent = 'PLAY';
-  }
+$('vocalsToggle').addEventListener('click', () => {
+  vocalsOn = !vocalsOn;
+  updateToggleLabels();
 });
-audio.addEventListener('play', () => { $('play').textContent = 'PAUSE'; });
-audio.addEventListener('pause', () => { $('play').textContent = 'PLAY'; });
-audio.addEventListener('ended', () => { $('play').textContent = 'PLAY'; });
+$('backingToggle').addEventListener('click', () => {
+  backingOn = !backingOn;
+  updateToggleLabels();
+});
+$('play').addEventListener('click', () => {
+  const master = masterElement();
+  if (!master) return;
+  if (master.paused) playAll();
+  else pauseAll();
+});
 
-// Click or drag the preview to scrub. The canvas is the timeline.
+// Keep the play button label honest when one of the two stems ends.
+for (const element of [vocals, backing]) {
+  element.addEventListener('play', () => { $('play').textContent = 'PAUSE'; });
+  element.addEventListener('pause', () => {
+    if (vocals.paused && backing.paused) $('play').textContent = 'PLAY';
+  });
+  element.addEventListener('ended', () => {
+    if (vocals.paused && backing.paused) $('play').textContent = 'PLAY';
+  });
+}
+
+seek.addEventListener('input', () => {
+  seeking = true;
+  setTime(Number(seek.value));
+});
+seek.addEventListener('change', () => { seeking = false; });
+seek.addEventListener('pointerup', () => { seeking = false; });
+
 let scrubbing = false;
+let scrubWindow = null;
 function scrub(event) {
-  if (!state) return;
+  if (!state || !scrubWindow) return;
   const rect = canvas.getBoundingClientRect();
   const padX = 26;
   const innerW = Math.max(1, rect.width - padX * 2);
   const x = Math.min(rect.width - padX, Math.max(padX, event.clientX - rect.left));
-  setAudioTime(Math.max(0, Math.min(state.duration, ((x - padX) / innerW) * state.duration)));
-  draw();
+  setTime(scrubWindow.start + ((x - padX) / innerW) * scrubWindow.span);
 }
 canvas.addEventListener('pointerdown', (event) => {
   scrubbing = true;
+  scrubWindow = visibleWindow();
   canvas.setPointerCapture(event.pointerId);
   scrub(event);
 });
 canvas.addEventListener('pointermove', (event) => { if (scrubbing) scrub(event); });
-canvas.addEventListener('pointerup', () => { scrubbing = false; });
-canvas.addEventListener('pointercancel', () => { scrubbing = false; });
+canvas.addEventListener('pointerup', () => { scrubbing = false; scrubWindow = null; });
+canvas.addEventListener('pointercancel', () => { scrubbing = false; scrubWindow = null; });
 
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return;
@@ -254,5 +434,12 @@ window.addEventListener('keydown', (event) => {
   }
 });
 window.addEventListener('resize', draw);
+window.addEventListener('pagehide', () => sendPosition(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') sendPosition(true);
+});
+window.addEventListener('beforeunload', () => sendPosition(true));
+setInterval(() => { if (!busy && state) sendPosition(false); }, 5000);
+
 loadState();
 tick();

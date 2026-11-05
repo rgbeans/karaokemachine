@@ -10,6 +10,7 @@ PROJECT_ROOT = AUTOMAP_DIR.parent
 
 SONGS_DIR = PROJECT_ROOT / "assets" / "songs"
 APPROVED_PATH = AUTOMAP_DIR / "approved.json"
+TARGETS_PATH = AUTOMAP_DIR / "targets.json"
 CACHE_DIR = AUTOMAP_DIR / "cache"
 CHECKPOINT_DIR = AUTOMAP_DIR / "checkpoints"
 CANDIDATE_DIR = AUTOMAP_DIR / "candidates"
@@ -17,6 +18,7 @@ STATE_DIR = AUTOMAP_DIR / "state"
 
 MODEL_PATH = CHECKPOINT_DIR / "note_policy.pt"
 PENDING_PATH = STATE_DIR / "pending.npz"
+QUEUE_PATH = STATE_DIR / "queue.json"
 FEEDBACK_PATH = STATE_DIR / "feedback.jsonl"
 
 # Audio analysis frame rate and candidate proposal rate.

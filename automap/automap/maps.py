@@ -23,8 +23,10 @@ class Song:
     id: str
     title: str
     artist: str
+    album: str
     duration: float
     guide_path: Path
+    backing_path: Path | None
     lines: list[dict[str, Any]]
     raw: dict[str, Any]
 
@@ -94,12 +96,17 @@ def load_song(song_id: str) -> Song:
     path = song_dir / "song.json"
     raw = json.loads(path.read_text(encoding="utf-8"))
     audio = raw.get("audio") or {}
-    guide_name = audio.get("vocals") or audio.get("guide") or audio.get("backing")
-    if not guide_name:
-        raise ValueError(f"{song_id} has no vocal/guide audio")
-    guide_path = song_dir / str(guide_name)
-    if not guide_path.exists():
-        raise FileNotFoundError(f"vocal/guide audio is missing: {guide_path}")
+    vocals_name = audio.get("vocals") or audio.get("guide")
+    backing_name = audio.get("backing")
+    vocals_path = song_dir / str(vocals_name) if vocals_name else None
+    backing_path = song_dir / str(backing_name) if backing_name else None
+    if vocals_path is not None and not vocals_path.exists():
+        vocals_path = None
+    if backing_path is not None and not backing_path.exists():
+        backing_path = None
+    guide_path = vocals_path or backing_path
+    if guide_path is None:
+        raise FileNotFoundError(f"vocal/guide/backing audio is missing for {song_id}")
     duration = float(raw.get("duration") or 0.0)
     lines = list(raw.get("lines") or [])
     if duration <= 0.0:
@@ -111,8 +118,10 @@ def load_song(song_id: str) -> Song:
         id=song_id,
         title=str(raw.get("title") or song_id),
         artist=str(raw.get("artist") or ""),
+        album=str(raw.get("album") or ""),
         duration=duration,
         guide_path=guide_path,
+        backing_path=backing_path,
         lines=lines,
         raw=raw,
     )

@@ -11,6 +11,7 @@ from .config import MODEL_PATH, SONGS_DIR
 from .generate import generate_candidate, pending_path, print_generation
 from .grade import parse_grade, print_pending, update_from_grade
 from .maps import load_approved_tracks
+from .queue import load_targets
 from .train import train
 from .ui import run_ui
 
@@ -21,6 +22,7 @@ def _approved_ids() -> set[str]:
 
 def command_songs(_: argparse.Namespace) -> None:
     approved = _approved_ids()
+    targets = {target.song_id for target in load_targets()}
     rows = []
     for song_dir in sorted(SONGS_DIR.iterdir()):
         song_file = song_dir / "song.json"
@@ -51,16 +53,23 @@ def command_songs(_: argparse.Namespace) -> None:
                 finals,
                 drafts,
                 song_dir.name in approved,
+                song_dir.name in targets,
             )
         )
-    print(f"{'song id':24} {'title':38} {'audio':5} {'maps':>6} {'approved':>9}")
-    for song_id, title, artist, has_audio, finals, drafts, is_approved in rows:
+    print(
+        f"{'song id':24} {'title':38} {'audio':5} {'maps':>6} "
+        f"{'training':>9} {'target':>7}"
+    )
+    for song_id, title, artist, has_audio, finals, drafts, is_approved, is_target in rows:
         print(
             f"{song_id:24} {title[:38]:38} {'yes' if has_audio else 'no':5} "
-            f"{finals:2d}F/{drafts:2d}D {('yes' if is_approved else 'no'):>9}"
+            f"{finals:2d}F/{drafts:2d}D {('yes' if is_approved else 'no'):>9} "
+            f"{('yes' if is_target else 'no'):>7}"
         )
     print()
-    print("Only maps listed in automap/approved.json are used for training.")
+    print("Training uses only maps in automap/approved.json.")
+    print("Generation targets are listed in automap/targets.json.")
+    print(f"Target queue: {len(targets)} songs; Man in the Box is excluded.")
 
 
 def command_train(args: argparse.Namespace) -> None:
@@ -90,13 +99,12 @@ def command_ui(args: argparse.Namespace) -> None:
         port=args.port,
         install=not args.no_install,
         open_browser=not args.no_browser,
-        resume=args.resume,
     )
 
 
 def command_grade(args: argparse.Namespace) -> None:
     approved = load_approved_tracks()
-    song_id = args.song or approved[0].song_id
+    song_id = args.song or load_targets()[0].song_id
     install = not args.no_install
     if args.new or not print_pending(song_id):
         info = generate_candidate(song_id=song_id, seed=args.seed, install=install)
@@ -180,7 +188,6 @@ def build_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--port", type=int, default=8765)
     ui_parser.add_argument("--no-browser", action="store_true")
     ui_parser.add_argument("--no-install", action="store_true")
-    ui_parser.add_argument("--resume", action="store_true", help="show any waiting candidate")
     ui_parser.set_defaults(func=command_ui)
 
     grade_parser = sub.add_parser("grade", help="grade a candidate, reinforce, and generate the next")

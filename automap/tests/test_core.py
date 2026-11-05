@@ -44,8 +44,10 @@ class CoreTests(unittest.TestCase):
             id="test",
             title="Test Song",
             artist="Tester",
+            album="Tests",
             duration=10.0,
             guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
             lines=[
                 {
                     "start": 1.0,
@@ -70,6 +72,17 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(document["format"], "karaokemachine-level")
         self.assertEqual(document["low"], 58)
         self.assertEqual(document["high"], 64)
+
+    def test_targets_are_the_other_albums_and_exclude_man_in_the_box(self) -> None:
+        import json
+
+        from automap.config import TARGETS_PATH
+
+        payload = json.loads(TARGETS_PATH.read_text(encoding="utf-8"))
+        ids = {track["song_id"] for track in payload["tracks"]}
+        self.assertEqual(len(ids), 30)
+        self.assertNotIn("yt-H1i5HaQV9ck", ids)
+        self.assertEqual(set(payload["albums"]), {"Dirt", "Facelift", "Jar of Flies"})
 
     def test_note_matching(self) -> None:
         truth = [{"start": 1.0, "midi": 60}, {"start": 2.0, "midi": 62}]

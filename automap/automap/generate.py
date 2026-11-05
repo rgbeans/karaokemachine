@@ -42,9 +42,16 @@ def generate_candidate(
     ensure_dirs()
     checkpoint = load_checkpoint(model_path)
     if song_id is None:
-        from .maps import load_approved_tracks
+        from .queue import load_targets
 
-        song_id = load_approved_tracks()[0].song_id
+        song_id = load_targets()[0].song_id
+    from .maps import load_approved_tracks
+
+    approved_ids = {track.song_id for track in load_approved_tracks()}
+    if song_id in approved_ids:
+        raise RuntimeError(
+            "that song already has an approved map; generation is disabled for it"
+        )
     song = load_song(song_id)
     audio = load_or_extract(song)
     candidates = load_or_build_candidates(song, audio)

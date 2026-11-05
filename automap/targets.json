@@ -1,0 +1,163 @@
+{
+  "note": "Generation targets only. Training data is approved.json. Man in the Box is excluded because it already has a finished map.",
+  "never_generate": [
+    "yt-H1i5HaQV9ck"
+  ],
+  "albums": [
+    "Dirt",
+    "Facelift",
+    "Jar of Flies"
+  ],
+  "tracks": [
+    {
+      "song_id": "yt-zTuD8k3JvxQ",
+      "title": "Them Bones",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-Vtpgj9CQvJo",
+      "title": "Dam That River",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-IPTHlmhtg8s",
+      "title": "Rain When I Die",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-gWUZHVT-qQY",
+      "title": "Down in a Hole",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-1pI5Au4bveE",
+      "title": "Rooster",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-3U7REVIJacM",
+      "title": "Junkhead",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-olNNVEYiP20",
+      "title": "Dirt",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-ugT4QtlqWNs",
+      "title": "God Smack",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-DNRMUm6lssQ",
+      "title": "Iron Gland",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-wsYlhY9usDc",
+      "title": "Hate to Feel",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-IpEXM1Yziws",
+      "title": "Angry Chair",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-Nco_kh8xJDs",
+      "title": "Would?",
+      "album": "Dirt"
+    },
+    {
+      "song_id": "yt-6JA25BIxgtk",
+      "title": "We Die Young",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-nBlqmw9dtHg",
+      "title": "Sea of Sorrow",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-Rr-tPTpGDr8",
+      "title": "Bleed the Freak",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-_2Wi0m5qPMc",
+      "title": "I Can't Remember",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-zRrCDFUeBw8",
+      "title": "Love, Hate, Love",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-iTOZ4snT7Sg",
+      "title": "It Ain't Like That",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-2maHkdezdEc",
+      "title": "Sunshine",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-XDVWRMHLisg",
+      "title": "Put You Down",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-ucp1yNPDu-Y",
+      "title": "I Know Somethin' ('Bout You)",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-iy_oKAOMveU",
+      "title": "Real Thing",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-MljsevVmA8g",
+      "title": "Confusion",
+      "album": "Facelift"
+    },
+    {
+      "song_id": "yt-LDOApsYhtrk",
+      "title": "Rotten Apple",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-G23iLGhh9lo",
+      "title": "Nutshell",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-ODTv9Lt5WYs",
+      "title": "I Stay Away",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-r80HF68KM8g",
+      "title": "No Excuses",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-zGQuYs53PN4",
+      "title": "Whale & Wasp",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-2SVR6Y4Gs28",
+      "title": "Don't Follow",
+      "album": "Jar of Flies"
+    },
+    {
+      "song_id": "yt-Qs-NrNEJH2s",
+      "title": "Swing on This",
+      "album": "Jar of Flies"
+    }
+  ]
+}
