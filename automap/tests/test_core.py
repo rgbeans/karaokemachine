@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import unittest
+
+import numpy as np
+import torch
+
+from automap.config import FEATURE_COUNT
+from automap.grade import parse_grade
+from automap.maps import Song
+from automap.model import NotePolicy
+from automap.notes import build_map_document, match_note_sets
+from automap.policy import calibrate_selection_bias
+
+
+class CoreTests(unittest.TestCase):
+    def test_parse_grade(self) -> None:
+        self.assertEqual(parse_grade("5"), 5)
+        self.assertEqual(parse_grade("+"), 5)
+        self.assertEqual(parse_grade("-"), 1)
+        self.assertEqual(parse_grade("0"), 3)
+        self.assertEqual(parse_grade("s"), 3)
+        self.assertIsNone(parse_grade("maybe"))
+
+    def test_selection_bias_calibrates(self) -> None:
+        logits = torch.zeros(1000)
+        bias = calibrate_selection_bias(logits, target_count=100)
+        probabilities = torch.sigmoid(logits + bias)
+        self.assertAlmostEqual(float(probabilities.sum()), 100.0, delta=2.0)
+
+    def test_policy_shapes_and_ranges(self) -> None:
+        model = NotePolicy(FEATURE_COUNT, hidden=32)
+        features = torch.randn(2, FEATURE_COUNT, 17)
+        with torch.no_grad():
+            output = model(features)
+            self.assertEqual(output["select_logit"].shape, (2, 17))
+            self.assertEqual(output["pitch_offset"].shape, (2, 17))
+            self.assertLessEqual(float(output["pitch_offset"].abs().max()), 3.0)
+            self.assertLessEqual(float(output["onset_offset"].abs().max()), 0.08)
+            self.assertLessEqual(float(output["log_scale"].abs().max()), 1.5)
+
+    def test_map_document_has_playable_shape(self) -> None:
+        song = Song(
+            id="test",
+            title="Test Song",
+            artist="Tester",
+            duration=10.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            lines=[
+                {
+                    "start": 1.0,
+                    "end": 3.0,
+                    "text": "hello world",
+                    "words": [
+                        {"text": "hello", "start": 1.0, "end": 1.8},
+                        {"text": "world", "start": 2.0, "end": 2.8},
+                    ],
+                }
+            ],
+            raw={},
+        )
+        notes = [
+            {"start": 1.0, "dur": 0.5, "midi": 60},
+            {"start": 2.0, "dur": 0.5, "midi": 62},
+        ]
+        document = build_map_document(song, notes)
+        self.assertTrue(document["draft"])
+        self.assertEqual(len(document["notes"]), 2)
+        self.assertEqual(len(document["placedWords"]), 2)
+        self.assertEqual(document["format"], "karaokemachine-level")
+        self.assertEqual(document["low"], 58)
+        self.assertEqual(document["high"], 64)
+
+    def test_note_matching(self) -> None:
+        truth = [{"start": 1.0, "midi": 60}, {"start": 2.0, "midi": 62}]
+        predicted = [
+            {"start": 1.05, "midi": 60},
+            {"start": 2.02, "midi": 61},
+            {"start": 4.0, "midi": 64},
+        ]
+        precision, recall, f1 = match_note_sets(predicted, truth)
+        self.assertAlmostEqual(precision, 2 / 3)
+        self.assertAlmostEqual(recall, 1.0)
+        self.assertGreater(f1, 0.7)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,11 @@
+{
+  "note": "Only finished maps listed here are used for training. Never add a draft map. The other public maps and all drafts are intentionally excluded.",
+  "tracks": [
+    {
+      "song_id": "yt-H1i5HaQV9ck",
+      "map": "maps/Legacy.json",
+      "title": "Man in the Box",
+      "artist": "Alice in Chains"
+    }
+  ]
+}

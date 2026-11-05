@@ -278,7 +278,14 @@ site/                  GitHub Pages map browser and JSON map packages
 packaging/             Windows README copied into the portable zip
 docs/                  screenshots
 assets/songs/<song>/maps/  draft and finished level JSON files
+automap/               standalone experimental neural autogenerator
 ```
+
+## Experimental autogenerator
+
+`automap/` is a standalone Python research tool that learns from approved finished maps
+and generates playable draft maps. It has its own local thumbs-up/down grading window.
+It is not compiled into the app. See [automap/README.md](automap/README.md).
 
 ## Known limits
 
