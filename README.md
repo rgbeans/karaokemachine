@@ -19,6 +19,10 @@ public map list automatically. Use **Import Map File** for a downloaded package;
 installed as a separate level file under the song's `maps/` folder. If the audio is not
 already local, KaraokeMachine fetches it from the map's source link.
 
+A chart with no audio source can be shared as a no-audio map (`noAudio: true`, empty
+`sourceUrl`). It is listed and labeled **NO AUDIO**; installing it creates a chart-only
+song and downloads nothing.
+
 To share a map, submit a mapping made in the editor. See
 [CONTRIBUTING.md](CONTRIBUTING.md). Exported map packages contain no audio files.
 

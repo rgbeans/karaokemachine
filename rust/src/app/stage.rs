@@ -2,7 +2,7 @@
 
 use super::{ctx_pointer, pitch_col, Action, KaraokeMachineApp, MapPickerMode};
 use crate::audio::Microphone;
-use crate::library::{load_map_file, save_score, save_settings, song_audio_path};
+use crate::library::{load_map_file, save_score, save_settings, song_audio_path, song_has_audio};
 use crate::model::{format_time, note_name, Note, RibbonSide, ScoreRecord, Scores, Settings, Song};
 use crate::pitch::{detect_pitch, PitchReading};
 use crate::theme::{alpha, BG, GOLD, INK, LINE, MINT, MUTED, MUTED2, OCTAVE_BLUE, PINK};
@@ -997,15 +997,20 @@ impl KaraokeMachineApp {
         if self.mic.is_none() && !self.no_mic {
             self.start_mic();
         }
+        let has_audio = song_has_audio(&self.root, &song);
         let backing = song_audio_path(&self.root, &song, "backing");
         let vocals = song_audio_path(&self.root, &song, "vocals");
         let mut stage = Stage::new(song, &self.settings);
-        if let Some(audio) = &self.audio {
-            audio.set_volumes(self.backing_level(), self.settings.vocals_volume);
-            stage.audio_loading = true;
+        if has_audio {
+            if let Some(audio) = &self.audio {
+                audio.set_volumes(self.backing_level(), self.settings.vocals_volume);
+                stage.audio_loading = true;
+            }
         }
         self.stage = Some(stage);
-        self.start_audio_load(backing, Some(vocals), false);
+        if has_audio {
+            self.start_audio_load(backing, Some(vocals), false);
+        }
         self.drawer_open = false;
         self.settings_open = false;
         self.started_at = now;
@@ -1057,7 +1062,11 @@ impl KaraokeMachineApp {
         } else {
             stage.playing = true;
             stage.started = true;
-            self.toast("No audio output available; chart only.", now);
+            if stage.song.no_audio {
+                self.toast("This map has no audio; chart only.", now);
+            } else {
+                self.toast("No audio output available; chart only.", now);
+            }
         }
     }
 
@@ -1244,13 +1253,20 @@ impl KaraokeMachineApp {
         p.text(
             Pos2::new(66.0, 50.0),
             Align2::LEFT_TOP,
-            format!(
-                "{}   ·   {}",
-                stage.song.artist_display(),
-                stage.song.tags.join(" · ")
-            ),
+            if stage.song.no_audio {
+                format!(
+                    "{}   ·   NO AUDIO · CHART ONLY",
+                    stage.song.artist_display()
+                )
+            } else {
+                format!(
+                    "{}   ·   {}",
+                    stage.song.artist_display(),
+                    stage.song.tags.join(" · ")
+                )
+            },
             FontId::proportional(10.0),
-            MUTED,
+            if stage.song.no_audio { GOLD } else { MUTED },
         );
         let accuracy = if stage.total_probe > 0 {
             (stage.hit_probe as f32 / stage.total_probe as f32 * 100.0).round() as i32

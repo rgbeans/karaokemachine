@@ -14,7 +14,7 @@ use crate::editor::{
 use crate::jobs::Job;
 use crate::library::{
     build_albums, find_root, load_map_file, load_map_files, load_scores, load_settings, load_songs,
-    maps_dir, read_songlist, read_songlist_path, save_map_file, song_audio_path,
+    maps_dir, read_songlist, read_songlist_path, save_map_file, song_audio_path, song_has_audio,
 };
 use crate::map_package::{MapIndex, MapIndexEntry, MapPackage};
 use crate::model::{pitch_color, Album, MapFile, MapInfo, Scores, Settings, Song};
@@ -386,6 +386,7 @@ impl KaraokeMachineApp {
         self.range_testing = false;
         let suggestions = song.suggested_notes.clone();
         let duration = song.duration().max(1.0);
+        let has_audio = song_has_audio(&self.root, &song);
         let backing = song_audio_path(&self.root, &song, "backing");
         let vocals = song_audio_path(&self.root, &song, "vocals");
         let editor = Editor::new(
@@ -402,7 +403,9 @@ impl KaraokeMachineApp {
         }
         self.editor = Some(editor);
         self.map_picker = None;
-        self.start_audio_load(backing, Some(vocals), true);
+        if has_audio {
+            self.start_audio_load(backing, Some(vocals), true);
+        }
         self.started_at = now;
         self.tracker.reset();
         self.reading = None;
@@ -534,14 +537,22 @@ impl KaraokeMachineApp {
 
     fn reload_current_audio(&mut self) {
         if let Some(editor) = &mut self.editor {
+            editor.set_audio_ready(false);
+            if !song_has_audio(&self.root, &editor.song) {
+                return;
+            }
             let backing = song_audio_path(&self.root, &editor.song, "backing");
             let vocals = song_audio_path(&self.root, &editor.song, "vocals");
-            editor.set_audio_ready(false);
             if let Some(audio) = &self.audio {
                 audio.set_volumes(0.9, 0.85);
             }
             self.start_audio_load(backing, Some(vocals), true);
         } else if let Some(stage) = &mut self.stage {
+            if !song_has_audio(&self.root, &stage.song) {
+                stage.audio_loaded = false;
+                stage.audio_loading = false;
+                return;
+            }
             let backing = song_audio_path(&self.root, &stage.song, "backing");
             let vocals = song_audio_path(&self.root, &stage.song, "vocals");
             stage.play_when_loaded = stage.playing;

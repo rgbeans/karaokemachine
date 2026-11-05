@@ -34,6 +34,8 @@ pub struct MapIndexEntry {
     pub duration: f64,
     #[serde(rename = "sourceUrl", default)]
     pub source_url: String,
+    #[serde(rename = "noAudio", default)]
+    pub no_audio: bool,
     #[serde(default)]
     pub file: String,
     #[serde(default)]
@@ -62,8 +64,11 @@ pub struct MapPackage {
     pub album: Option<String>,
     #[serde(rename = "releaseDate", default)]
     pub release_date: Option<String>,
-    #[serde(rename = "sourceUrl")]
+    #[serde(rename = "sourceUrl", default)]
     pub source_url: String,
+    /// A silent score with no external audio source.
+    #[serde(rename = "noAudio", default)]
+    pub no_audio: bool,
     #[serde(default)]
     pub duration: f64,
     #[serde(default)]
@@ -114,9 +119,14 @@ impl MapPackage {
         if !song.mapped {
             return Err("Only a submitted mapping can be exported.".into());
         }
-        let source_url = song.youtube_url.clone().unwrap_or_default();
-        if source_url.trim().is_empty() {
-            return Err("This song has no source link, so it cannot be shared safely.".into());
+        let mut source_url = song.youtube_url.clone().unwrap_or_default();
+        if song.no_audio {
+            source_url.clear();
+        }
+        if source_url.trim().is_empty() && !song.no_audio {
+            return Err(
+                "This song has no source link. Mark it as a no-audio map to share it.".into(),
+            );
         }
         let cover = read_cover_data_uri(root, song);
         let mut tags = song.tags.clone();
@@ -133,6 +143,7 @@ impl MapPackage {
             album: song.album.clone(),
             release_date: song.release_date.clone(),
             source_url,
+            no_audio: song.no_audio,
             duration: song.duration,
             bpm: song.bpm,
             low: song.low,
@@ -406,6 +417,24 @@ mod tests {
         let mut song = song();
         song.mapped = false;
         assert!(MapPackage::from_song(Path::new("."), &song, None).is_err());
+    }
+
+    #[test]
+    fn no_audio_map_exports_without_a_source_link() {
+        let mut song = song();
+        song.youtube_url = Some("https://example.com/audio.mp3".into());
+        song.no_audio = true;
+        let package = MapPackage::from_song(Path::new("."), &song, None).expect("export map");
+        assert!(package.no_audio);
+        assert!(package.source_url.is_empty());
+
+        let value = serde_json::to_value(&package).expect("serialize map");
+        assert_eq!(value["noAudio"], json!(true));
+        assert!(value.get("audio").is_none());
+
+        let parsed = MapPackage::from_json(&value.to_string()).expect("parse no-audio map");
+        assert!(parsed.no_audio);
+        assert!(parsed.source_url.is_empty());
     }
 
     #[test]

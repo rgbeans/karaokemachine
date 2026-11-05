@@ -1,6 +1,29 @@
 {
   "maps": [
     {
+      "id": "salve-regina",
+      "title": "Salve Regina (Simple Tone)",
+      "artist": "Traditional Gregorian Chant",
+      "album": "Gregorian Chants",
+      "releaseDate": "",
+      "duration": 142.12,
+      "sourceUrl": "",
+      "noAudio": true,
+      "file": "salve-regina-simple-tone-traditional-gregorian-chant-salve-regina.json",
+      "cover": "covers/salve-regina.jpg",
+      "notes": 145,
+      "lyrics": 8,
+      "contributor": "rgbeans",
+      "tags": [
+        "Gregorian chant",
+        "Marian antiphon",
+        "Latin",
+        "A cappella",
+        "Sheet music",
+        "Mapped"
+      ]
+    },
+    {
       "id": "yt-5f779b972f9",
       "title": "Tequila",
       "artist": "The Champs",
@@ -8,6 +31,7 @@
       "releaseDate": "1958-01-15",
       "duration": 130.53,
       "sourceUrl": "https://archive.org/download/TheChamps-Tequila-1958/TheChamps-Tequila.mp3",
+      "noAudio": false,
       "file": "tequila-the-champs-yt-5f779b972f9.json",
       "cover": "covers/yt-5f779b972f9.jpg",
       "notes": 7,

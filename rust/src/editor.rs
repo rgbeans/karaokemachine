@@ -2196,6 +2196,8 @@ impl Editor {
             Align2::CENTER_CENTER,
             if self.audio_ready {
                 "AUDIO READY"
+            } else if self.song.no_audio {
+                "NO AUDIO · CHART"
             } else {
                 "CHART PREVIEW"
             },

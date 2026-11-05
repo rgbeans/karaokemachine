@@ -8,7 +8,7 @@ use crate::library::{
 };
 use crate::map_package::{MapIndex, MapIndexEntry, MapPackage};
 use crate::model::{format_time, MapFile, Song};
-use crate::theme::{INK, MUTED};
+use crate::theme::{GOLD, INK, MUTED};
 use crate::tools::{http_get_bytes, http_get_text};
 use crate::widgets::{click, pill_button, pill_toggle};
 use base64::Engine;
@@ -82,12 +82,32 @@ pub(super) fn install_package_as_map(
     song.album = map.album.clone();
     song.release_date = map.release_date.clone();
     song.lines = map.lines.clone();
-    song.youtube_url = Some(map.source_url.clone());
+    if !map.source_url.trim().is_empty() {
+        song.youtube_url = Some(map.source_url.clone());
+    }
+    if map.duration > 0.0 {
+        song.duration = map.duration;
+    }
+    if map.bpm.is_some() {
+        song.bpm = map.bpm;
+    }
+    song.lyrics_provider = map.lyrics_provider.clone();
+    song.lyrics_synced = map.lyrics_synced;
+    song.tags.retain(|tag| tag != "UNMAPPED");
+    for tag in &map.tags {
+        if tag != "UNMAPPED" && !song.tags.iter().any(|existing| existing == tag) {
+            song.tags.push(tag.clone());
+        }
+    }
+    if !song.tags.iter().any(|tag| tag == "Mapped") {
+        song.tags.push("Mapped".into());
+    }
     song.notes.clear();
     song.draft_notes.clear();
     song.placed_words.clear();
     song.custom_words.clear();
     song.ribbon_links.clear();
+    song.no_audio = map.no_audio && !song_audio_path(root, song, "backing").is_file();
     let path = maps_dir(root, &song.id).join(map.file_name());
     if path.exists() {
         let backup = path.with_extension("json.bak");
@@ -97,6 +117,49 @@ pub(super) fn install_package_as_map(
     save_map_file(&path, &map.to_map_file())?;
     write_song_file(&dir, song)?;
     Ok(path)
+}
+
+/// Create a song folder for a package that carries no audio. The map file and
+/// metadata are installed exactly like any other map.
+fn create_no_audio_song(root: &Path, map: &MapPackage) -> Result<(Song, PathBuf), String> {
+    let mut id: String = map
+        .id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    id = id.trim_matches('-').to_string();
+    if id.is_empty() {
+        id = "community-map".into();
+    }
+    let base = id.clone();
+    let mut suffix = 1;
+    while root.join("assets/songs").join(&id).exists() {
+        id = format!("{base}-{suffix}");
+        suffix += 1;
+    }
+    let mut song: Song = serde_json::from_value(serde_json::json!({
+        "id": id,
+        "title": map.title.clone(),
+        "source": "community",
+        "noAudio": true,
+        "tags": ["Community map"],
+        "audio": {"backing": "backing.mp3"}
+    }))
+    .map_err(|error| format!("Could not prepare the song: {error}"))?;
+    let dir = root.join("assets/songs").join(&song.id);
+    match install_package_as_map(root, &mut song, map) {
+        Ok(path) => Ok((song, path)),
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            Err(error)
+        }
+    }
 }
 
 impl KaraokeMachineApp {
@@ -139,12 +202,21 @@ impl KaraokeMachineApp {
                 FontId::proportional(12.0),
                 INK,
             );
+            let sub = if entry.no_audio {
+                if entry.artist.trim().is_empty() {
+                    "NO AUDIO · chart only".to_string()
+                } else {
+                    format!("{} · NO AUDIO · chart only", entry.artist)
+                }
+            } else {
+                entry.artist.clone()
+            };
             p.text(
                 Pos2::new(row.left() + 66.0, row.top() + 27.0),
                 Align2::LEFT_TOP,
-                &entry.artist,
+                sub,
                 FontId::monospace(7.0),
-                MUTED,
+                if entry.no_audio { GOLD } else { MUTED },
             );
             let install = Rect::from_min_size(
                 Pos2::new(row.right() - 82.0, row.top() + 17.0),
@@ -329,6 +401,10 @@ impl KaraokeMachineApp {
     }
 
     pub(super) fn install_map(&mut self, map: MapPackage, now: f64, ctx: &egui::Context) {
+        if map.no_audio {
+            self.install_no_audio_map(map, now, ctx);
+            return;
+        }
         if map.source_url.trim().is_empty() {
             self.toast("This map has no audio source link.", now);
             return;
@@ -416,6 +492,59 @@ impl KaraokeMachineApp {
         }
     }
 
+    fn install_no_audio_map(&mut self, map: MapPackage, now: f64, ctx: &egui::Context) {
+        if let Some(existing) = self
+            .songs
+            .iter()
+            .find(|song| {
+                song.id == map.id
+                    || (song.title.eq_ignore_ascii_case(&map.title)
+                        && song.artist.as_deref() == map.artist.as_deref())
+            })
+            .cloned()
+        {
+            let mut song = existing.clone();
+            match install_package_as_map(&self.root, &mut song, &map) {
+                Ok(path) => {
+                    self.reload_library(ctx, now);
+                    if let Some(index) = self.songs.iter().position(|song| song.id == existing.id) {
+                        self.drawer_open = false;
+                        self.open_map_picker(index, MapPickerMode::Play, now);
+                        self.toast(
+                            format!("No-audio map installed as {}.", path.display()),
+                            now,
+                        );
+                    } else {
+                        self.toast("Map saved. Reload the library to see it.", now);
+                    }
+                }
+                Err(error) => self.toast(error, now),
+            }
+            return;
+        }
+
+        match create_no_audio_song(&self.root, &map) {
+            Ok((song, path)) => {
+                let song_id = song.id;
+                self.reload_library(ctx, now);
+                if let Some(index) = self.songs.iter().position(|song| song.id == song_id) {
+                    self.drawer_open = false;
+                    self.open_map_picker(index, MapPickerMode::Play, now);
+                    self.toast(
+                        format!(
+                            "No-audio map installed as {}. It plays chart-only.",
+                            path.display()
+                        ),
+                        now,
+                    );
+                } else {
+                    self.toast("Map saved. Reload the library to see it.", now);
+                }
+            }
+            Err(error) => self.toast(error, now),
+        }
+    }
+
     pub(super) fn export_editor_map(&mut self, now: f64) {
         let result: Result<Option<PathBuf>, String> = if let Some(editor) = &self.editor {
             if editor.is_draft() {
@@ -442,5 +571,71 @@ impl KaraokeMachineApp {
             Ok(None) => {}
             Err(error) => self.toast(error, now),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::{load_map_file, song_has_audio};
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("karaokemachine-maps-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    fn no_audio_package() -> MapPackage {
+        MapPackage::from_json(
+            r#"{
+                "format": "karaokemachine-map",
+                "version": 1,
+                "id": "chart-only",
+                "title": "Chart Only",
+                "artist": "Tester",
+                "noAudio": true,
+                "duration": 10.0,
+                "notes": [{"start": 1.0, "dur": 0.5, "midi": 60}],
+                "lines": []
+            }"#,
+        )
+        .expect("no-audio package")
+    }
+
+    #[test]
+    fn a_no_audio_package_installs_as_a_chart_only_song() {
+        let root = scratch("no-audio-install");
+        let map = no_audio_package();
+        let (song, path) = create_no_audio_song(&root, &map).expect("install package");
+        assert!(song.no_audio);
+        assert!(path.is_file());
+
+        let song_file = root.join("assets/songs").join(&song.id).join("song.json");
+        let saved: Song =
+            serde_json::from_str(&std::fs::read_to_string(song_file).expect("song file"))
+                .expect("saved song");
+        assert!(saved.no_audio);
+        assert_eq!(saved.title, "Chart Only");
+        assert!(!song_has_audio(&root, &saved));
+
+        let loaded = load_map_file(&path).expect("map file");
+        assert!(!loaded.draft);
+        assert_eq!(loaded.notes.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_published_salve_map_is_a_no_audio_package() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../site/maps/salve-regina-simple-tone-traditional-gregorian-chant-salve-regina.json",
+        );
+        let map = MapPackage::load(&path).expect("published Salve map");
+        assert_eq!(map.id, "salve-regina");
+        assert!(map.no_audio);
+        assert!(map.source_url.is_empty());
+        assert_eq!(map.notes.len(), 145);
+        assert_eq!(map.lines.len(), 8);
     }
 }

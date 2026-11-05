@@ -9,4 +9,6 @@ npm run maps:index
 ```
 
 This generates `index.json` for the map browser. Map packages must not contain audio.
-See the repository's `CONTRIBUTING.md` for the full checklist.
+A chart with no audio source sets `"noAudio": true` and leaves `sourceUrl` empty; it is
+listed with a **NO AUDIO** label. See the repository's `CONTRIBUTING.md` for the full
+checklist.

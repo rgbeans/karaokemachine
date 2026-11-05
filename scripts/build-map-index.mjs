@@ -47,8 +47,12 @@ async function main() {
     }
     if (map.format !== format) fail(full, `expected format "${format}"`);
     if (!map.id || !map.title) fail(full, 'missing id or title');
-    if (!map.sourceUrl || !/^https?:\/\//i.test(map.sourceUrl)) {
+    const noAudio = map.noAudio === true;
+    if (!noAudio && (!map.sourceUrl || !/^https?:\/\//i.test(map.sourceUrl))) {
       fail(full, 'missing a valid http(s) sourceUrl');
+    }
+    if (noAudio && map.sourceUrl) {
+      fail(full, 'a no-audio map must leave sourceUrl empty');
     }
     if (!Array.isArray(map.notes) || !map.notes.length) fail(full, 'no mapped notes');
     if (map.audio || map.audioFiles) fail(full, 'audio must not be embedded in a map package');
@@ -59,7 +63,8 @@ async function main() {
       album: map.album || '',
       releaseDate: map.releaseDate || '',
       duration: Number(map.duration) || 0,
-      sourceUrl: map.sourceUrl,
+      sourceUrl: map.sourceUrl || '',
+      noAudio,
       file,
       cover: await writeCover(map, map.id),
       notes: map.notes.length,

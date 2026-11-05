@@ -35,6 +35,8 @@ MAPS AND AUDIO
 - Library -> Maps -> Import Map File installs a downloaded JSON map as a
   separate level file. If the audio is not local, the app fetches it from the
   source link and separates it.
+- Maps marked NO AUDIO are chart-only silent scores. They have no source link,
+  download nothing, and play on the chart clock.
 - Uploading a brand new song, or installing a map whose audio is not already
   local, also needs Node.js 22+, ffmpeg, yt-dlp, and Python 3 with Demucs and
   numpy. They are not bundled with this portable build; the import scripts

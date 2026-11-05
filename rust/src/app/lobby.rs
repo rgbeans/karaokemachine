@@ -526,6 +526,8 @@ impl KaraokeMachineApp {
                 format!("{map_count} MAPS · choose one to play")
             } else if song.maps[0].draft {
                 "DRAFT · playable preview".to_string()
+            } else if song.no_audio {
+                "NO AUDIO · chart only".to_string()
             } else if song.lyrics_synced.unwrap_or(false) {
                 "synced lyrics".to_string()
             } else if !song.lines.is_empty() {
@@ -538,7 +540,13 @@ impl KaraokeMachineApp {
                 Align2::LEFT_CENTER,
                 sub,
                 FontId::monospace(7.0),
-                if map_count == 0 { PINK } else { MUTED2 },
+                if map_count == 0 {
+                    PINK
+                } else if song.no_audio {
+                    GOLD
+                } else {
+                    MUTED2
+                },
             );
             let meta = format!(
                 "{} · {}",

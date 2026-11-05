@@ -201,6 +201,10 @@ pub struct Song {
     pub audio: AudioFiles,
     #[serde(rename = "youtubeUrl", default)]
     pub youtube_url: Option<String>,
+    /// A chart-only score. Playback follows the chart clock and expects no
+    /// local backing or guide files.
+    #[serde(rename = "noAudio", default)]
+    pub no_audio: bool,
     #[serde(rename = "lyricsProvider", default)]
     pub lyrics_provider: Option<String>,
     #[serde(rename = "lyricsSynced", default)]

@@ -272,6 +272,12 @@ pub fn build_albums(songs: &[Song]) -> Vec<Album> {
     albums
 }
 
+/// Whether the stage can decode audio for this song. No-audio maps are
+/// chart-only even if a stale audio file happens to sit in the folder.
+pub fn song_has_audio(root: &Path, song: &Song) -> bool {
+    !song.no_audio && song_audio_path(root, song, "backing").is_file()
+}
+
 pub fn song_audio_path(root: &Path, song: &Song, which: &str) -> PathBuf {
     let name = match which {
         "backing" => Some(song.audio.backing.as_str()),
@@ -440,6 +446,30 @@ mod tests {
             "{}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_no_audio_song_never_uses_a_local_backing() {
+        let root = scratch("no-audio");
+        let song_dir = root.join("assets/songs/chart");
+        fs::create_dir_all(&song_dir).expect("song dir");
+        fs::write(
+            song_dir.join("song.json"),
+            serde_json::json!({
+                "id": "chart",
+                "title": "Chart",
+                "noAudio": true,
+                "audio": {"backing": "backing.mp3"}
+            })
+            .to_string(),
+        )
+        .expect("song json");
+        fs::write(song_dir.join("backing.mp3"), b"stale audio").expect("stale backing");
+
+        let songs = load_songs(&root);
+        assert!(songs[0].no_audio);
+        assert!(!song_has_audio(&root, &songs[0]));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

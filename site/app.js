@@ -66,6 +66,10 @@ function render() {
     body.className = 'card-body';
     const title = document.createElement('h3');
     title.textContent = text(map.title, 'Untitled map');
+    const badge = document.createElement('div');
+    badge.className = 'badge no-audio';
+    badge.textContent = 'NO AUDIO';
+    badge.title = 'Chart-only map. No audio is included or downloaded.';
     const byline = document.createElement('div');
     byline.className = 'byline';
     byline.textContent = [text(map.artist, 'Unknown artist'), text(map.album)].filter(Boolean).join(' · ');
@@ -74,7 +78,9 @@ function render() {
     meta.textContent = `${duration(map.duration)} · ${Number(map.notes) || 0} notes · ${Number(map.lyrics) || 0} lyric lines`;
     const source = document.createElement('div');
     source.className = 'meta';
-    source.textContent = `source: ${sourceHost(map.sourceUrl)}`;
+    source.textContent = map.noAudio
+      ? 'no audio · chart-only silent score'
+      : `source: ${sourceHost(map.sourceUrl)}`;
     const actions = document.createElement('div');
     actions.className = 'actions';
     const link = document.createElement('a');
@@ -82,7 +88,8 @@ function render() {
     link.download = map.file;
     link.textContent = 'DOWNLOAD MAP';
     actions.append(link);
-    body.append(title, byline, meta, source, actions);
+    if (map.noAudio) body.append(title, badge, byline, meta, source, actions);
+    else body.append(title, byline, meta, source, actions);
     card.append(cover, body);
     grid.append(card);
   }

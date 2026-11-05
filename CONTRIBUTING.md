@@ -12,6 +12,10 @@ KaraokeMachine maps are shared as **JSON packages only**. A map package contains
 A map package **must not contain audio**. Audio is fetched from the source link when
 someone installs the map.
 
+A chart that has no audio source can still be shared as a no-audio map. Set
+`"noAudio": true` and leave `sourceUrl` empty. The map browser and the app label it
+**NO AUDIO**, and installing it creates a chart-only song with no download.
+
 ## Export a map from the app
 
 1. Map the song in the editor and press **Submit Mapping**.
@@ -38,7 +42,7 @@ The map browser is deployed from `site/` by `.github/workflows/pages.yml`.
 
 ## Source links
 
-Use a public link that the app can download from:
+Every map with audio needs a public link that the app can download from:
 
 - YouTube
 - SoundCloud
