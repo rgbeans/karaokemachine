@@ -412,6 +412,38 @@ function resizeCanvas() {
   return { dpr, width: rect.width, height: rect.height };
 }
 
+function drawRibbons(ctx, state, xFor, yFor, start, span, low, high, noteHeight, width) {
+  const notes = state.notes || [];
+  const links = state.ribbonLinks || [];
+  if (!notes.length || !links.length) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.globalAlpha = 0.34;
+  for (const link of links) {
+    const from = notes[link.from];
+    const to = notes[link.to];
+    if (!from || !to) continue;
+    const fromTime = link.fromSide === 'left' ? from.start : from.start + from.dur;
+    const toTime = link.toSide === 'right' ? to.start + to.dur : to.start;
+    if (Math.max(fromTime, toTime) < start - 1 || Math.min(fromTime, toTime) > start + span + 1) continue;
+    const x1 = xFor(fromTime);
+    const x2 = xFor(toTime);
+    const y1 = yFor(from.midi);
+    const y2 = yFor(to.midi);
+    if (Math.max(x1, x2) < 22 || Math.min(x1, x2) > width - 22) continue;
+    ctx.strokeStyle = hslFor((Number(from.midi) + Number(to.midi)) / 2, low, high);
+    ctx.lineWidth = Math.max(3, noteHeight * 0.55);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const bend = Math.min(18, Math.max(4, Math.abs(x2 - x1) * 0.12));
+    ctx.bezierCurveTo(x1 + bend, y1, x2 - bend, y2, x2, y2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+
 function draw() {
   const ctx = canvas.getContext('2d');
   const { dpr, width, height } = resizeCanvas();
@@ -461,6 +493,7 @@ function draw() {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const noteHeight = Math.max(5, Math.min(13, innerH / Math.max(10, high - low) * 0.72));
+  drawRibbons(ctx, state, xFor, yFor, start, span, low, high, noteHeight, width);
   for (const note of state.notes || []) {
     if (note.start + note.dur < start - 0.2 || note.start > start + span + 0.2) continue;
     const leftTime = Math.max(note.start, start);

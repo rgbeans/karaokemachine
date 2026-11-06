@@ -190,6 +190,135 @@ def place_words(
     return placed
 
 
+def _note_groups(notes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    if not notes:
+        return []
+    groups: list[list[dict[str, Any]]] = [[notes[0]]]
+    for note in notes[1:]:
+        previous = groups[-1][-1]
+        gap = float(note["start"]) - (float(previous["start"]) + float(previous["dur"]))
+        pitch = abs(int(note["midi"]) - int(previous["midi"]))
+        if gap > 0.35 or pitch >= 5:
+            groups.append([note])
+        else:
+            groups[-1].append(note)
+    return groups
+
+
+def assign_word_runs(
+    song: Song,
+    notes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Assign notes to words by sung runs, not by equal word index.
+
+    A run boundary is a large gap or a large pitch leap. The first and last
+    runs anchor the first and last words; intermediate runs are distributed
+    across the intermediate words by text length. This keeps melismas attached
+    to the word that carries them and stops words from being evenly spaced.
+    """
+    if not notes:
+        return place_words(song, notes)
+    midis = [int(note["midi"]) for note in notes]
+    low, high = min(midis), max(midis)
+    span = max(12, high - low)
+    center = (low + high) / 2.0
+    starts = [float(line.get("start", 0.0)) for line in song.lines]
+    line_notes: list[list[dict[str, Any]]] = [[] for _ in song.lines]
+    if starts:
+        for note in notes:
+            note_start = float(note["start"])
+            position = int(np.searchsorted(starts, note_start, side="right") - 1)
+            if position < 0:
+                continue
+            line_end = float(song.lines[position].get("end", starts[position]))
+            if note_start > line_end + 0.5:
+                continue
+            line_notes[position].append(note)
+
+    placed: list[dict[str, Any]] = []
+    for line_index, line in enumerate(song.lines):
+        words = list(line.get("words") or [])
+        if not words:
+            continue
+        candidates = sorted(
+            line_notes[line_index], key=lambda item: (item["start"], item["midi"])
+        )
+        if not candidates:
+            for word_index, word in enumerate(words):
+                placed.append(
+                    {
+                        "text": str(word.get("text") or ""),
+                        "start": round(float(word.get("start", line.get("start", 0.0))), 3),
+                        "y": 0.5,
+                        "line": line_index,
+                        "wordIndex": word_index,
+                    }
+                )
+            continue
+
+        groups = _note_groups(candidates)
+        assignments: list[list[dict[str, Any]]] = [[] for _ in words]
+        if len(groups) >= len(words):
+            if len(words) == 1:
+                assignments[0] = [note for group in groups for note in group]
+            else:
+                assignments[0] = groups[0]
+                assignments[-1] = groups[-1]
+                middle_groups = groups[1:-1]
+                middle_words = words[1:-1]
+                if middle_words and middle_groups:
+                    weights = [max(2, len(str(word.get("text") or "")) + 1) for word in middle_words]
+                    total = sum(weights)
+                    cursor = 0
+                    for index, weight in enumerate(weights):
+                        remaining_words = len(middle_words) - index - 1
+                        end = len(middle_groups) - remaining_words if remaining_words else len(middle_groups)
+                        end = max(cursor + 1, min(end, cursor + max(1, round(len(middle_groups) * weight / total))))
+                        assignments[1 + index] = [
+                            note for group in middle_groups[cursor:end] for note in group
+                        ]
+                        cursor = end
+                    # Anything left belongs to the closest middle word.
+                    if cursor < len(middle_groups):
+                        assignments[1 + len(middle_words) - 1].extend(
+                            note for group in middle_groups[cursor:] for note in group
+                        )
+        if any(not assignment for assignment in assignments):
+            # Too few pitch runs: fall back to proportional note distribution.
+            for word_index, word in enumerate(words):
+                if len(candidates) == 1:
+                    position = 0
+                elif len(candidates) >= len(words):
+                    position = round(word_index * (len(candidates) - 1) / max(1, len(words) - 1))
+                else:
+                    position = int(word_index * len(candidates) / max(1, len(words)))
+                assignments[word_index] = [candidates[min(len(candidates) - 1, position)]]
+
+        for word_index, word in enumerate(words):
+            assigned = assignments[word_index]
+            if assigned:
+                first_note = min(assigned, key=lambda item: float(item["start"]))
+                start = float(first_note["start"])
+                y = 0.5 - (float(first_note["midi"]) - center) / span * 0.42
+                for note in assigned:
+                    note["word"] = str(word.get("text") or "")
+                    note["wordIndex"] = word_index
+                    note["line"] = line_index
+            else:
+                start = float(word.get("start", line.get("start", 0.0)))
+                y = 0.5
+            placed.append(
+                {
+                    "text": str(word.get("text") or ""),
+                    "start": round(start, 3),
+                    "y": round(float(np.clip(y, 0.12, 0.88)), 4),
+                    "line": line_index,
+                    "wordIndex": word_index,
+                }
+            )
+    return placed
+
+
 def place_words_from_notes(
     song: Song,
     notes: list[dict[str, Any]],
@@ -280,22 +409,23 @@ def build_ribbon_links(
     from .ribbon_model import predict_ribbon_links
 
     if song is not None and RIBBON_MODEL_PATH.exists():
-        learned = predict_ribbon_links(song, notes)
-        return learned
-    links: list[dict[str, Any]] = []
-    for index in range(len(notes) - 1):
-        current = notes[index]
-        following = notes[index + 1]
-        gap = float(following["start"]) - (float(current["start"]) + float(current["dur"]))
-        if gap <= 0.40 and abs(int(following["midi"]) - int(current["midi"])) <= 12:
-            links.append(
-                {
-                    "from": index,
-                    "to": index + 1,
-                    "fromSide": "right",
-                    "toSide": "left",
-                }
-            )
+        links = predict_ribbon_links(song, notes)
+    else:
+        links = []
+        for index in range(len(notes) - 1):
+            current = notes[index]
+            following = notes[index + 1]
+            gap = float(following["start"]) - (float(current["start"]) + float(current["dur"]))
+            if gap <= 0.40 and abs(int(following["midi"]) - int(current["midi"])) <= 12:
+                links.append(
+                    {
+                        "from": index,
+                        "to": index + 1,
+                        "fromSide": "right",
+                        "toSide": "left",
+                    }
+                )
+    links.sort(key=lambda link: (link["from"], link["to"]))
     return links
 
 
@@ -312,7 +442,7 @@ def build_map_document(
     low = max(0, min(midis) - 2) if midis else 48
     high = min(127, max(midis) + 2) if midis else 72
     placed_words = (
-        place_words_from_notes(song, notes)
+        assign_word_runs(song, notes)
         if words_from_notes
         else place_words(song, notes, audio)
     )

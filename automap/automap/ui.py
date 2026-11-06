@@ -259,6 +259,7 @@ class Session:
             "notes": document.get("notes") or [],
             "lines": document.get("lines") or [],
             "placedWords": document.get("placedWords") or [],
+            "ribbonLinks": document.get("ribbonLinks") or [],
             "low": int(document.get("low") or 0),
             "high": int(document.get("high") or 0),
             "note_count": len(document.get("notes") or []),

@@ -41,16 +41,19 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 4. A neural denoiser scores each teacher note, chooses a target density, and
    predicts small pitch, onset and duration corrections. When no teacher model
    is available, the older onset-proposal policy is the fallback.
-5. Ensures every timed lyric word gets at least one nearby teacher or audio
-   note, so quiet words are not dropped.
-6. Writes a playable draft map with notes, explicit ribbon links, lyric lines,
-   and note-driven placed words. For songs with public karaoke timing data, a
-   second small network calibrates the word times against those public
-   versions. Sunshine uses public line-level LRCLIB timing, so only its line
-   placement is calibrated.
+5. Segments notes into sung word runs by pitch leaps and gaps, so melismas stay
+   attached to the word that carries them instead of spreading lyrics evenly.
+6. Ensures every timed lyric word gets at least one nearby teacher or audio
+   note, so quiet words are not dropped. If the denoiser is much sparser than
+   the vocal activity, it falls back to the dense teacher chart.
+7. Writes a playable draft map with notes, explicit ribbon links, lyric lines,
+   and note-driven placed words. The web preview draws those ribbon links. For
+   fallback policy maps with public karaoke timing data, a second small network
+   calibrates the word times against those public versions. Sunshine uses
+   public line-level LRCLIB timing, so only its line placement is calibrated.
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
-7. Plays the map in the grading window. A thumbs-down updates the policy and
+8. Plays the map in the grading window. A thumbs-down updates the policy and
    generates another candidate for the same song; a thumbs-up updates the
    policy and advances to the next song.
 

@@ -12,6 +12,7 @@ from automap.grade import parse_grade
 from automap.maps import Song
 from automap.model import NotePolicy
 from automap.notes import (
+    assign_word_runs,
     build_map_document,
     build_ribbon_links,
     match_note_sets,
@@ -194,6 +195,44 @@ class CoreTests(unittest.TestCase):
         ]
         links = build_ribbon_links(notes)
         self.assertEqual(links, [{"from": 0, "to": 1, "fromSide": "right", "toSide": "left"}])
+
+    def test_word_runs_keep_a_melisma_together(self) -> None:
+        song = Song(
+            id="word-runs",
+            title="Word Runs",
+            artist="Tester",
+            album="Tests",
+            duration=5.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
+            lines=[
+                {
+                    "start": 0.0,
+                    "end": 4.0,
+                    "text": "We chase misprinted lies",
+                    "words": [
+                        {"text": "We", "start": 0.0, "end": 1.0},
+                        {"text": "chase", "start": 1.0, "end": 2.0},
+                        {"text": "misprinted", "start": 2.0, "end": 3.0},
+                        {"text": "lies", "start": 3.0, "end": 4.0},
+                    ],
+                }
+            ],
+            raw={},
+        )
+        notes = [
+            {"start": 0.0, "dur": 0.2, "midi": 60},
+            {"start": 0.25, "dur": 0.2, "midi": 62},
+            {"start": 0.5, "dur": 0.2, "midi": 61},
+            {"start": 0.75, "dur": 0.2, "midi": 63},
+            {"start": 1.1, "dur": 0.4, "midi": 55},
+            {"start": 2.1, "dur": 0.4, "midi": 54},
+            {"start": 3.1, "dur": 0.4, "midi": 53},
+        ]
+        placed = assign_word_runs(song, notes)
+        self.assertEqual(placed[0]["text"], "We")
+        self.assertEqual(sum(1 for note in notes if note.get("word") == "We"), 4)
+        self.assertEqual(placed[1]["text"], "chase")
 
     def test_words_follow_the_note_track(self) -> None:
         song = Song(

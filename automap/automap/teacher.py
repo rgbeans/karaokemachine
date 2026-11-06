@@ -763,5 +763,22 @@ def generate_teacher_notes(
     if not notes:
         return None
     notes = ensure_word_coverage(song, notes, suggestions, audio)
+    # Some songs contain long melismatic phrases that the denoiser collapses
+    # too aggressively. Keep the dense teacher chart when the selected track is
+    # much sparser than the song's vocal activity.
+    if len(notes) < song.duration * 0.50 and len(suggestions) > len(notes) * 1.5:
+        notes = [
+            {
+                "start": round(float(note["start"]), 3),
+                "dur": round(float(note["dur"]), 3),
+                "midi": int(note["midi"]),
+                "vel": 0.8,
+                "word": None,
+                "wordIndex": None,
+                "line": None,
+                "ribbon": None,
+            }
+            for note in suggestions
+        ]
     return notes, candidates, actions, runtime
 
