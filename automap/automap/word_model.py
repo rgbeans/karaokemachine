@@ -36,7 +36,9 @@ FEATURE_NAMES = (
     "onset",
     "voiced_ratio",
     "song_duration",
-) + tuple(f"source_{source.title}" for source in karaoke.SOURCES)
+) + tuple(f"source_{source.title}" for source in karaoke.SOURCES) + tuple(
+    f"line_source_{source.title}" for source in karaoke.LINE_SOURCES
+)
 
 
 @dataclass
@@ -77,7 +79,7 @@ def word_features(
     word: dict[str, Any],
     word_index: int,
     word_count: int,
-    source: karaoke.KaraokeSource,
+    source: karaoke.TimingSource,
 ) -> list[float]:
     local = float(word.get("start", 0.0))
     line_start = float(line.get("start", 0.0))
@@ -96,7 +98,7 @@ def word_features(
     )
     midi, rms, onset, voiced = _audio_stats(audio, local)
     text = karaoke.normalize(str(word.get("text") or ""))
-    source_index = karaoke.SOURCES.index(source)
+    source_index = karaoke.source_index(source)
     values = [
         local / max(1.0, song.duration),
         max(0.05, float(word.get("end", local)) - local),
@@ -115,11 +117,22 @@ def word_features(
         voiced,
         song.duration / 400.0,
     ]
-    values.extend(1.0 if index == source_index else 0.0 for index in range(len(karaoke.SOURCES)))
+    values.extend(
+        1.0 if index == source_index else 0.0
+        for index in range(len(karaoke.SOURCES) + len(karaoke.LINE_SOURCES))
+    )
     return values
 
 
-def _rows_for_song(song: Song) -> tuple[list[list[float]], list[float], list[float], karaoke.KaraokeSource]:
+def _rows_for_song(
+    song: Song,
+) -> tuple[
+    list[list[float]],
+    list[float],
+    list[float],
+    karaoke.TimingSource,
+    list[karaoke.WordTarget],
+]:
     targets, source = karaoke.load_targets(song)
     if source is None:
         raise RuntimeError(f"{song.title} has no public karaoke timing source")
@@ -143,7 +156,7 @@ def _rows_for_song(song: Song) -> tuple[list[list[float]], list[float], list[flo
         )
         residuals.append(target.target_time - target.local_time)
         local_times.append(target.local_time)
-    return features, residuals, local_times, source
+    return features, residuals, local_times, source, targets
 
 
 def _target_mae(
@@ -163,29 +176,91 @@ def _target_mae(
     return float(np.mean(np.abs(predictions - expected)))
 
 
+def _line_mae(
+    model: nn.Module,
+    features: list[list[float]],
+    targets: list[karaoke.WordTarget],
+    mean: np.ndarray,
+    std: np.ndarray,
+) -> tuple[float, float, int]:
+    """Measure line placement error, not interpolated word error.
+
+    A line-level source gives one timestamp per lyric line. Predictions for all
+    words in a line are averaged into a single line shift, then compared with
+    the public line-start shift.
+    """
+    if not features:
+        return 0.0, 0.0, 0
+    normalized = (np.asarray(features, dtype=np.float32) - mean) / std
+    model.eval()
+    with torch.no_grad():
+        predictions = model(torch.from_numpy(normalized)).squeeze(-1).numpy()
+    grouped: dict[int, list[tuple[float, float]]] = {}
+    for prediction, target in zip(predictions, targets):
+        if target.level != "line":
+            continue
+        grouped.setdefault(target.line_index, []).append(
+            (float(prediction), float(target.target_time - target.local_time))
+        )
+    if not grouped:
+        return 0.0, 0.0, 0
+    errors: list[float] = []
+    baseline: list[float] = []
+    for pairs in grouped.values():
+        predicted = float(np.mean([pair[0] for pair in pairs]))
+        expected = float(np.mean([pair[1] for pair in pairs]))
+        errors.append(abs(predicted - expected))
+        baseline.append(abs(expected))
+    baseline_mae = float(np.mean(baseline))
+    return (
+        float(np.mean(errors)),
+        0.0 if baseline_mae < 1e-6 else baseline_mae,
+        len(grouped),
+    )
+
+
 def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     train_features: list[list[float]] = []
     train_residuals: list[float] = []
+    train_targets: list[karaoke.WordTarget] = []
     per_song: dict[str, dict[str, Any]] = {}
-    for source in karaoke.SOURCES:
+    all_sources: list[karaoke.TimingSource] = [
+        *karaoke.SOURCES,
+        *karaoke.LINE_SOURCES,
+    ]
+    for source in all_sources:
         song = load_song(source.song_id)
-        features, residuals, _, source = _rows_for_song(song)
+        features, residuals, _, source, targets = _rows_for_song(song)
         train_features.extend(features)
         train_residuals.extend(residuals)
-        per_song[song.id] = {
+        train_targets.extend(targets)
+        item: dict[str, Any] = {
             "title": song.title,
-            "usdb_id": source.usdb_id,
+            "level": source.level,
             "source_url": source.source_url,
-            "notes_url": source.notes_url,
             "offset": source.offset,
             "words": len(residuals),
             "baseline_mae": float(np.mean(np.abs(residuals))) if residuals else 0.0,
             "_features": features,
             "_residuals": residuals,
+            "_targets": targets,
         }
-        print(f"  {song.title}: {len(residuals)} word targets")
+        if isinstance(source, karaoke.KaraokeSource):
+            item["usdb_id"] = source.usdb_id
+            item["notes_url"] = source.notes_url
+        else:
+            item["lrclib_id"] = source.lrclib_id
+            item["lyrics_url"] = source.lyrics_url
+        per_song[song.id] = item
+        if source.level == "line":
+            print(
+                f"  {song.title}: {len(residuals)} words across "
+                f"{len({target.line_index for target in targets})} public lines"
+            )
+        else:
+            print(f"  {song.title}: {len(residuals)} word targets")
 
     if not train_features:
         raise RuntimeError("no public karaoke word targets were found")
@@ -221,38 +296,87 @@ def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
             print(f"epoch {epoch:04d} loss={np.mean(losses):.4f}")
 
     metrics: dict[str, Any] = {
-        "source": "USDB public UltraStar note timings",
+        "source": "USDB word timings and LRCLIB line timings",
         "feature_names": list(FEATURE_NAMES),
-        "overall_baseline_mae": float(np.mean(np.abs(expected))),
+        "overall_baseline_mae": 0.0,
         "overall_mae": 0.0,
+        "overall_line_baseline_mae": 0.0,
+        "overall_line_mae": 0.0,
         "songs": {},
     }
+    line_maes: list[float] = []
+    line_baselines: list[float] = []
     for song_id, item in per_song.items():
-        mae = _target_mae(model, item.pop("_features"), item.pop("_residuals"), mean, std)
+        features_for_song = item.pop("_features")
+        residuals_for_song = item.pop("_residuals")
+        targets_for_song = item.pop("_targets")
+        if item["level"] == "line":
+            mae, baseline, line_count = _line_mae(
+                model, features_for_song, targets_for_song, mean, std
+            )
+            item["lines"] = line_count
+            line_maes.append(mae)
+            line_baselines.append(baseline)
+        else:
+            mae = _target_mae(
+                model, features_for_song, residuals_for_song, mean, std
+            )
         item["mae"] = mae
+        if item["level"] == "line":
+            item["baseline_mae"] = baseline
         metrics["songs"][song_id] = item
         print(
             f"  {item['title']}: baseline {item['baseline_mae'] * 1000:.0f} ms, "
             f"model {mae * 1000:.0f} ms"
         )
-    # Recompute overall from a final pass over all songs.
+
+    # Recompute overall from a final pass over all targets. Word-level and
+    # line-level errors stay separate because the LRCLIB source has no
+    # independent word timestamps.
     features = np.asarray(train_features, dtype=np.float32)
     normalized_all = (features - mean) / std
     model.eval()
     with torch.no_grad():
         predictions = model(torch.from_numpy(normalized_all)).squeeze(-1).numpy()
-    metrics["overall_mae"] = float(np.mean(np.abs(predictions - expected)))
-    metrics["overall_baseline_mae"] = float(np.mean(np.abs(expected)))
+    word_mask = np.asarray(
+        [target.level == "word" for target in train_targets], dtype=bool
+    )
+    if word_mask.any():
+        metrics["overall_mae"] = float(
+            np.mean(np.abs(predictions[word_mask] - expected[word_mask]))
+        )
+        metrics["overall_baseline_mae"] = float(
+            np.mean(np.abs(expected[word_mask]))
+        )
+    metrics["overall_line_mae"] = (
+        float(np.mean(line_maes)) if line_maes else 0.0
+    )
+    metrics["overall_line_baseline_mae"] = (
+        float(np.mean(line_baselines)) if line_baselines else 0.0
+    )
     metrics["sources"] = [
         {
             "song_id": source.song_id,
             "usdb_id": source.usdb_id,
             "title": source.title,
+            "level": source.level,
             "offset": source.offset,
             "source_url": source.source_url,
             "notes_url": source.notes_url,
         }
         for source in karaoke.SOURCES
+    ]
+    metrics["line_sources"] = [
+        {
+            "song_id": source.song_id,
+            "lrclib_id": source.lrclib_id,
+            "title": source.title,
+            "level": source.level,
+            "offset": source.offset,
+            "source_url": source.source_url,
+            "lyrics_url": source.lyrics_url,
+        }
+        for source in karaoke.LINE_SOURCES
     ]
 
     WORD_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -270,22 +394,27 @@ def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
     WORD_METRICS_PATH.write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    offsets: dict[str, dict[str, Any]] = {}
+    for source in karaoke.SOURCES:
+        offsets[source.song_id] = {
+            "usdb_id": source.usdb_id,
+            "title": source.title,
+            "level": source.level,
+            "offset": source.offset,
+            "source_url": source.source_url,
+            "notes_url": source.notes_url,
+        }
+    for source in karaoke.LINE_SOURCES:
+        offsets[source.song_id] = {
+            "lrclib_id": source.lrclib_id,
+            "title": source.title,
+            "level": source.level,
+            "offset": source.offset,
+            "source_url": source.source_url,
+            "lyrics_url": source.lyrics_url,
+        }
     WORD_OFFSETS_PATH.write_text(
-        json.dumps(
-            {
-                source.song_id: {
-                    "usdb_id": source.usdb_id,
-                    "title": source.title,
-                    "offset": source.offset,
-                    "source_url": source.source_url,
-                    "notes_url": source.notes_url,
-                }
-                for source in karaoke.SOURCES
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
+        json.dumps(offsets, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     print(
@@ -293,6 +422,11 @@ def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
         f"{metrics['overall_mae'] * 1000:.0f} ms "
         f"(baseline {metrics['overall_baseline_mae'] * 1000:.0f} ms)"
     )
+    if line_maes:
+        print(
+            f"  line-level MAE {metrics['overall_line_mae'] * 1000:.0f} ms "
+            f"(baseline {metrics['overall_line_baseline_mae'] * 1000:.0f} ms)"
+        )
     return metrics
 
 
@@ -328,7 +462,7 @@ def predict_word_time(
     runtime: WordRuntime,
     song: Song,
     audio: dict[str, Any],
-    source: karaoke.KaraokeSource,
+    source: karaoke.TimingSource,
     line: dict[str, Any],
     line_index: int,
     word: dict[str, Any],
@@ -357,10 +491,13 @@ def alignment_for_song(song_id: str) -> dict[str, Any] | None:
             return None
         return {
             "source": payload.get("source", "USDB"),
+            "level": item.get("level", "word"),
             "usdb_id": item.get("usdb_id"),
+            "lrclib_id": item.get("lrclib_id"),
             "mae": item.get("mae"),
             "baseline_mae": item.get("baseline_mae"),
             "words": item.get("words"),
+            "lines": item.get("lines"),
             "source_url": item.get("source_url"),
         }
     except Exception:

@@ -16,8 +16,10 @@ The allowlist contains exactly one finished map:
 
 - **Man in the Box** — Alice in Chains — `yt-H1i5HaQV9ck/maps/Legacy.json`
 
-Salve Regina, Tequila, and every draft map are **not** used for training. The
-loader rejects drafts and never auto-scans the library for training data.
+Salve Regina, Tequila, and every draft map are **not** used as note-policy
+training data. The loader rejects drafts and never auto-scans the library for
+training data. Public karaoke timing pages and LRCLIB synced lyric lines are
+separate calibration inputs; they are not maps and do not promote a draft.
 
 **Generation targets:** [`targets.json`](targets.json) lists the other 30 Alice
 in Chains songs from Dirt, Facelift, and Jar of Flies. Man in the Box is
@@ -36,7 +38,9 @@ targets are ignored; the model generates a new candidate from the vocal audio.
    note, so intros and quiet lyric lines are not empty.
 6. Writes a playable draft map with notes, ribbons, lyric lines, and placed
    lyric words. For songs with public karaoke timing data, a second small
-   network calibrates the word times against those public versions.
+   network calibrates the word times against those public versions. Sunshine
+   uses public line-level LRCLIB timing, so only its line placement is
+   calibrated.
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
 7. Plays the map in the grading window. A thumbs-down updates the policy and
@@ -84,34 +88,45 @@ cd automap
 ```
 
 This fetches the public USDB UltraStar timing pages for four of the target
-songs — **Them Bones**, **We Die Young**, **No Excuses**, and **Would?** — and
-trains the word-placement calibration network. Only timing/text pages are
-fetched; no karaoke audio is downloaded. Raw pages stay in the ignored
-`cache/karaoke/` folder.
+songs — **Them Bones**, **We Die Young**, **No Excuses**, and **Would?** — plus
+the public LRCLIB synced lyric lines for **Sunshine**, and trains the
+word-placement calibration network. Only timing/text pages are fetched; no
+karaoke audio is downloaded. Raw pages stay in the ignored `cache/karaoke/` and
+`cache/lrclib/` folders.
 
 The committed calibration result is in `word_metrics.json`:
 
-| Song | Words | Baseline word error | Calibrated error |
+| Song | Targets | Baseline error | Calibrated error |
 | --- | ---: | ---: | ---: |
-| Them Bones | 100 | 683 ms | **25.9 ms** |
-| We Die Young | 89 | 801 ms | **27.1 ms** |
-| No Excuses | 60 | 1349 ms | **39.7 ms** |
-| Would? | 127 | 814 ms | **19.0 ms** |
-| **Overall** | **376** | **861 ms** | **26.0 ms** |
+| Them Bones | 100 words | 683 ms | **25.7 ms** |
+| We Die Young | 89 words | 801 ms | **25.6 ms** |
+| No Excuses | 60 words | 1349 ms | **31.7 ms** |
+| Would? | 127 words | 814 ms | **26.8 ms** |
+| Sunshine (line-level) | 36 lines | 0 ms\* | **2.8 ms** |
+| **Overall word sources** | **376 words** | **861 ms** | **27.0 ms** |
+
+\* Sunshine's local lyric lines were imported from the same public LRCLIB
+version and shifted by 0.29 s to match the local audio, so the line-start
+baseline is already aligned. Its reported error is **line-level**, not
+word-level: LRCLIB does not provide word or note timestamps. Sunshine's word
+pills follow its public line boundaries; individual word times remain evenly
+distributed within each line.
 
 The model is fitted to those public versions; it is a calibration model for
-those songs, not a claim of held-out generalization. Other targets fall back to
-the song's synced lyric timings. The UI shows `WORD TIMING · USDB · N ms` for a
-calibrated song and `WORD TIMING · LYRICS` otherwise.
+those songs, not a claim of held-out generalization. The remaining targets fall
+back to the song's synced lyric timings. The UI shows
+`WORD TIMING · USDB · N ms` for a word-level calibrated song,
+`LINE TIMING · LRCLIB · N ms` for Sunshine, and `WORD TIMING · LYRICS` otherwise.
 
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
-**Note tracks** for those same four songs are rebuilt from the public USDB
-UltraStar note lines rather than the one-song neural policy. Their note times
-use the calibrated song offset, and each pitch is placed in the octave nearest
-the local vocal track. The UI labels them `NOTES · USDB CALIBRATED`; the other
-targets still use the neural policy and show `NOTES · NEURAL POLICY`.
+**Note tracks** for the four USDB songs are rebuilt from the public UltraStar
+note lines rather than the one-song neural policy. Their note times use the
+calibrated song offset, and each pitch is placed in the octave nearest the local
+vocal track. The UI labels them `NOTES · USDB CALIBRATED`. Sunshine has no
+public note-level karaoke chart, so it still uses the neural policy and shows
+`NOTES · NEURAL POLICY`; the other 25 targets do too.
 
 ## Grade in the UI
 
@@ -289,9 +304,11 @@ and never embeds audio in a map.
 - The pitch tracker misses about 10 of the 184 approved notes; those notes are
   excluded from the supervised selection labels.
 - Word timing and note tracks are calibrated against four public USDB karaoke
-  versions. The word-timing error is a fit to those versions, not a held-out
-  generalization benchmark. The other 26 targets still use the one-song policy
-  and the synced lyric timings.
+  versions. Sunshine adds a fifth timing source, but it is **line-level only**
+  (LRCLIB), so its individual word times and note track are not calibrated
+  against a public word/note chart. The word-timing error is a fit to those
+  versions, not a held-out generalization benchmark. The other 25 targets still
+  use the one-song policy and the synced lyric timings.
 - Coverage notes are forced at timed words when the policy would otherwise leave
   a lyric line empty. They are a safety net, not a separate learned model.
 - The target songs already have draft maps on disk, but those drafts are never

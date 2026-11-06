@@ -96,11 +96,51 @@ class CoreTests(unittest.TestCase):
 
         metrics = json.loads(WORD_METRICS_PATH.read_text(encoding="utf-8"))
         offsets = json.loads(WORD_OFFSETS_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(set(offsets), {source.song_id for source in karaoke.SOURCES})
+        source_ids = {
+            source.song_id for source in (*karaoke.SOURCES, *karaoke.LINE_SOURCES)
+        }
+        self.assertEqual(set(offsets), source_ids)
         self.assertLess(metrics["overall_mae"], 0.1)
+        self.assertLess(metrics["overall_line_mae"], 0.1)
         self.assertEqual(set(metrics["songs"]), set(offsets))
         for item in metrics["songs"].values():
             self.assertLess(item["mae"], 0.1)
+        sunshine = metrics["songs"]["yt-2maHkdezdEc"]
+        self.assertEqual(sunshine["level"], "line")
+        self.assertEqual(sunshine["lrclib_id"], 819361)
+        self.assertGreater(sunshine["lines"], 0)
+
+    def test_line_level_targets_shift_a_whole_line(self) -> None:
+        from automap import karaoke
+
+        song = Song(
+            id="line-test",
+            title="Line Test",
+            artist="Tester",
+            album="Tests",
+            duration=5.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
+            lines=[
+                {
+                    "start": 1.0,
+                    "end": 3.0,
+                    "text": "hello world",
+                    "words": [
+                        {"text": "hello", "start": 1.0, "end": 1.8},
+                        {"text": "world", "start": 2.0, "end": 2.8},
+                    ],
+                }
+            ],
+            raw={},
+        )
+        targets = karaoke._map_line_targets(
+            song, [{"start": 1.0, "text": "hello world"}], offset=0.5
+        )
+        self.assertEqual(len(targets), 2)
+        self.assertEqual({target.level for target in targets}, {"line"})
+        for target in targets:
+            self.assertAlmostEqual(target.target_time - target.local_time, 0.5)
 
     def test_public_note_calibration_sources(self) -> None:
         from automap import karaoke, note_calibration
@@ -141,6 +181,12 @@ class CoreTests(unittest.TestCase):
             song, audio, line, 0, line["words"][0], 0, 1, karaoke.SOURCES[0]
         )
         self.assertEqual(len(features), len(word_model.FEATURE_NAMES))
+
+        line_features = word_model.word_features(
+            song, audio, line, 0, line["words"][0], 0, 1, karaoke.LINE_SOURCES[0]
+        )
+        self.assertEqual(len(line_features), len(word_model.FEATURE_NAMES))
+        self.assertNotEqual(features[-1], line_features[-1])
 
     def test_note_matching(self) -> None:
         truth = [{"start": 1.0, "midi": 60}, {"start": 2.0, "midi": 62}]

@@ -1,8 +1,10 @@
-"""Public karaoke timing sources and word-level alignment targets.
+"""Public karaoke timing sources and alignment targets.
 
-The timing files come from USDB's public UltraStar "Show Notes" pages. They
-contain note/syllable timings and lyric text but no audio. Only the derived
-timing alignments are cached locally; raw pages stay in the ignored cache.
+The word-level sources come from USDB's public UltraStar "Show Notes" pages.
+They contain note/syllable timings and lyric text but no audio. The line-level
+source comes from LRCLIB's public synced lyrics; it only provides a timestamp
+for each lyric line, not for each word or note. Only derived timing alignments
+are cached locally; raw pages stay in the ignored cache.
 """
 
 from __future__ import annotations
@@ -12,12 +14,13 @@ import json
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Union
 
 from .config import CACHE_DIR
 from .maps import Song
 
 KARAOKE_CACHE = CACHE_DIR / "karaoke"
+LRCLIB_CACHE = CACHE_DIR / "lrclib"
 USER_AGENT = "KaraokeMachine-Automap/0.1 (timing research)"
 
 
@@ -29,6 +32,9 @@ class KaraokeSource:
     # USDB karaoke timeline -> local song timeline.
     offset: float
 
+    kind = "usdb"
+    level = "word"
+
     @property
     def source_url(self) -> str:
         return f"https://usdb.animux.de/index.php?link=detail&id={self.usdb_id}"
@@ -36,6 +42,29 @@ class KaraokeSource:
     @property
     def notes_url(self) -> str:
         return f"https://usdb.animux.de/view.php?id={self.usdb_id}&database1=deluxe_songs"
+
+
+@dataclass(frozen=True)
+class LineSource:
+    song_id: str
+    lrclib_id: int
+    title: str
+    # LRCLIB timeline -> local song timeline.
+    offset: float
+
+    kind = "lrclib"
+    level = "line"
+
+    @property
+    def source_url(self) -> str:
+        return f"https://lrclib.net/api/get/{self.lrclib_id}"
+
+    @property
+    def lyrics_url(self) -> str:
+        return f"https://lrclib.net/api/get/{self.lrclib_id}"
+
+
+TimingSource = Union[KaraokeSource, LineSource]
 
 
 SOURCES: tuple[KaraokeSource, ...] = (
@@ -47,6 +76,19 @@ SOURCES: tuple[KaraokeSource, ...] = (
 BY_SONG = {source.song_id: source for source in SOURCES}
 BY_INDEX = {index: source for index, source in enumerate(SOURCES)}
 
+# Songs with only public line timings. The local lyric lines for Sunshine were
+# imported from LRCLIB 819361 and shifted by 0.29 s to match the local audio.
+LINE_SOURCES: tuple[LineSource, ...] = (
+    LineSource("yt-2maHkdezdEc", 819361, "Sunshine", 0.29),
+)
+LINE_BY_SONG = {source.song_id: source for source in LINE_SOURCES}
+
+
+def source_index(source: TimingSource) -> int:
+    if isinstance(source, KaraokeSource):
+        return SOURCES.index(source)
+    return len(SOURCES) + LINE_SOURCES.index(source)
+
 
 @dataclass
 class WordTarget:
@@ -56,14 +98,20 @@ class WordTarget:
     word: dict[str, Any]
     target_time: float
     local_time: float
+    level: str = "word"
+    line_target_start: float | None = None
+    line_local_start: float | None = None
 
 
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", text.lower().replace("’", "'").replace("‘", "'"))
 
 
-def _fetch(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def _fetch(url: str, accept: str | None = None) -> str:
+    headers = {"User-Agent": USER_AGENT}
+    if accept:
+        headers["Accept"] = accept
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8", errors="replace")
 
@@ -119,6 +167,130 @@ def fetch_timing(source: KaraokeSource, force: bool = False) -> dict[str, Any]:
 
 def fetch_notes(source: KaraokeSource, force: bool = False) -> list[dict[str, Any]]:
     return list(fetch_timing(source, force=force)["notes"])
+
+
+_LRC_TIMESTAMP = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
+
+
+def fetch_line_timing(source: LineSource, force: bool = False) -> dict[str, Any]:
+    """Fetch and parse the public LRCLIB line timing payload for one source."""
+    LRCLIB_CACHE.mkdir(parents=True, exist_ok=True)
+    cache = LRCLIB_CACHE / f"{source.lrclib_id}.json"
+    if cache.exists() and not force:
+        payload = json.loads(cache.read_text(encoding="utf-8"))
+        if payload.get("lines"):
+            return payload
+
+    raw = json.loads(_fetch(source.source_url, accept="application/json"))
+    synced = str(raw.get("syncedLyrics") or "")
+    lines: list[dict[str, Any]] = []
+    for raw_line in synced.splitlines():
+        matches = _LRC_TIMESTAMP.findall(raw_line)
+        text = _LRC_TIMESTAMP.sub("", raw_line)
+        text = re.sub(r"<[^>]+>", "", text).strip()
+        if not matches or not text:
+            continue
+        for minutes, seconds in matches:
+            lines.append(
+                {
+                    "start": round(int(minutes) * 60.0 + float(seconds), 3),
+                    "text": text,
+                }
+            )
+    lines.sort(key=lambda line: line["start"])
+    if not lines:
+        raise RuntimeError(f"LRCLIB has no synced lyric lines for {source.title}")
+
+    payload = {
+        "source_url": source.source_url,
+        "lrclib_id": source.lrclib_id,
+        "title": source.title,
+        "lines": lines,
+        "synced": True,
+    }
+    cache.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
+def _match_line_indices(
+    song: Song, public_lines: list[dict[str, Any]]
+) -> list[tuple[int, int]]:
+    """Match local lyric lines to public LRC lines by normalized text."""
+    local_text = [normalize(str(line.get("text") or "")) for line in song.lines]
+    public_text = [normalize(str(line.get("text") or "")) for line in public_lines]
+    matched: list[tuple[int, int]] = []
+    used_public: set[int] = set()
+    matcher = difflib.SequenceMatcher(None, local_text, public_text, autojunk=False)
+    for block in matcher.get_matching_blocks():
+        for offset in range(block.size):
+            local_index = block.a + offset
+            public_index = block.b + offset
+            if local_text[local_index] and public_text[public_index]:
+                matched.append((local_index, public_index))
+                used_public.add(public_index)
+
+    matched_local = {item[0] for item in matched}
+    for local_index, text in enumerate(local_text):
+        if local_index in matched_local or not text:
+            continue
+        best_index = None
+        best_ratio = 0.58
+        for public_index in range(
+            max(0, local_index - 3), min(len(public_text), local_index + 4)
+        ):
+            if public_index in used_public or not public_text[public_index]:
+                continue
+            ratio = difflib.SequenceMatcher(
+                None, text, public_text[public_index], autojunk=False
+            ).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_index = public_index
+        if best_index is not None:
+            matched.append((local_index, best_index))
+            used_public.add(best_index)
+
+    matched.sort()
+    return matched
+
+
+def _map_line_targets(
+    song: Song,
+    public_lines: list[dict[str, Any]],
+    offset: float,
+) -> list[WordTarget]:
+    """Create line-start calibration targets from public LRC lines.
+
+    LRCLIB times each lyric line, not each word. Every word in a matched line
+    therefore gets the same target shift: the shift between the public line
+    start and the local line start. This calibrates line placement only; it is
+    not word-level ground truth.
+    """
+    targets: list[WordTarget] = []
+    for local_index, public_index in _match_line_indices(song, public_lines):
+        line = song.lines[local_index]
+        words = list(line.get("words") or [])
+        if not words:
+            continue
+        local_start = float(line.get("start", 0.0))
+        target_start = float(public_lines[public_index]["start"]) + offset
+        shift = target_start - local_start
+        for word_index, word in enumerate(words):
+            local_time = float(word.get("start", local_start))
+            targets.append(
+                WordTarget(
+                    line_index=local_index,
+                    word_index=word_index,
+                    word_count=len(words),
+                    word=word,
+                    target_time=local_time + shift,
+                    local_time=local_time,
+                    level="line",
+                    line_target_start=target_start,
+                    line_local_start=local_start,
+                )
+            )
+    return targets
 
 
 def _map_word_targets(
@@ -208,9 +380,13 @@ def _map_word_targets(
     return targets
 
 
-def load_targets(song: Song) -> tuple[list[WordTarget], KaraokeSource | None]:
+def load_targets(song: Song) -> tuple[list[WordTarget], TimingSource | None]:
     source = BY_SONG.get(song.id)
-    if source is None:
-        return [], None
-    notes = fetch_notes(source)
-    return _map_word_targets(song, notes, source.offset), source
+    if source is not None:
+        notes = fetch_notes(source)
+        return _map_word_targets(song, notes, source.offset), source
+    line_source = LINE_BY_SONG.get(song.id)
+    if line_source is not None:
+        payload = fetch_line_timing(line_source)
+        return _map_line_targets(song, payload["lines"], line_source.offset), line_source
+    return [], None

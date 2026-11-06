@@ -1,5 +1,5 @@
 {
-  "source": "USDB public UltraStar note timings",
+  "source": "USDB word timings and LRCLIB line timings",
   "feature_names": [
     "local_start_frac",
     "local_duration",
@@ -20,50 +20,69 @@
     "source_Them Bones",
     "source_We Die Young",
     "source_No Excuses",
-    "source_Would?"
+    "source_Would?",
+    "line_source_Sunshine"
   ],
   "overall_baseline_mae": 0.8610872030258179,
-  "overall_mae": 0.02602975443005562,
+  "overall_mae": 0.02697857841849327,
+  "overall_line_baseline_mae": 0.0,
+  "overall_line_mae": 0.0028050090919690264,
   "songs": {
     "yt-zTuD8k3JvxQ": {
       "title": "Them Bones",
-      "usdb_id": 1597,
+      "level": "word",
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=1597",
-      "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs",
       "offset": 0.4,
       "words": 100,
       "baseline_mae": 0.6827007447661583,
-      "mae": 0.0258578322827816
+      "usdb_id": 1597,
+      "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs",
+      "mae": 0.025676574558019638
     },
     "yt-6JA25BIxgtk": {
       "title": "We Die Young",
-      "usdb_id": 24234,
+      "level": "word",
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=24234",
-      "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs",
       "offset": 0.35,
       "words": 89,
       "baseline_mae": 0.8007419500895455,
-      "mae": 0.027058232575654984
+      "usdb_id": 24234,
+      "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs",
+      "mae": 0.02556261233985424
     },
     "yt-r80HF68KM8g": {
       "title": "No Excuses",
-      "usdb_id": 16056,
+      "level": "word",
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=16056",
-      "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs",
       "offset": -3.7,
       "words": 60,
       "baseline_mae": 1.3485971425226437,
-      "mae": 0.039746012538671494
+      "usdb_id": 16056,
+      "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs",
+      "mae": 0.0316837839782238
     },
     "yt-Nco_kh8xJDs": {
       "title": "Would?",
-      "usdb_id": 63,
+      "level": "word",
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=63",
-      "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs",
       "offset": -0.25,
       "words": 127,
       "baseline_mae": 0.813518680058629,
-      "mae": 0.018964260816574097
+      "usdb_id": 63,
+      "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs",
+      "mae": 0.02677314169704914
+    },
+    "yt-2maHkdezdEc": {
+      "title": "Sunshine",
+      "level": "line",
+      "source_url": "https://lrclib.net/api/get/819361",
+      "offset": 0.29,
+      "words": 157,
+      "baseline_mae": 0.0,
+      "lrclib_id": 819361,
+      "lyrics_url": "https://lrclib.net/api/get/819361",
+      "lines": 36,
+      "mae": 0.0028050090919690264
     }
   },
   "sources": [
@@ -71,6 +90,7 @@
       "song_id": "yt-zTuD8k3JvxQ",
       "usdb_id": 1597,
       "title": "Them Bones",
+      "level": "word",
       "offset": 0.4,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=1597",
       "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs"
@@ -79,6 +99,7 @@
       "song_id": "yt-6JA25BIxgtk",
       "usdb_id": 24234,
       "title": "We Die Young",
+      "level": "word",
       "offset": 0.35,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=24234",
       "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs"
@@ -87,6 +108,7 @@
       "song_id": "yt-r80HF68KM8g",
       "usdb_id": 16056,
       "title": "No Excuses",
+      "level": "word",
       "offset": -3.7,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=16056",
       "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs"
@@ -95,9 +117,21 @@
       "song_id": "yt-Nco_kh8xJDs",
       "usdb_id": 63,
       "title": "Would?",
+      "level": "word",
       "offset": -0.25,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=63",
       "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs"
+    }
+  ],
+  "line_sources": [
+    {
+      "song_id": "yt-2maHkdezdEc",
+      "lrclib_id": 819361,
+      "title": "Sunshine",
+      "level": "line",
+      "offset": 0.29,
+      "source_url": "https://lrclib.net/api/get/819361",
+      "lyrics_url": "https://lrclib.net/api/get/819361"
     }
   ]
 }

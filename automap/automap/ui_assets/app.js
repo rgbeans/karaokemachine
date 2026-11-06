@@ -164,10 +164,14 @@ function applyState(next) {
   $('meta').textContent = `${state.note_count} notes · take ${state.generated_for_song} · step ${state.model_step}`;
   const alignment = state.word_alignment;
   if (alignment && alignment.mae != null) {
-    const label = String(alignment.source || 'USDB').includes('USDB') ? 'USDB' : String(alignment.source);
-    $('alignment').className = 'alignment';
-    $('alignment').textContent = `WORD TIMING · ${label} · ${Math.round(Number(alignment.mae) * 1000)} ms`;
-    $('alignment').title = alignment.source_url || '';
+    const isLine = alignment.level === 'line';
+    const source = isLine ? 'LRCLIB' : 'USDB';
+    const kind = isLine ? 'LINE TIMING' : 'WORD TIMING';
+    $('alignment').className = isLine ? 'alignment line' : 'alignment';
+    $('alignment').textContent = `${kind} · ${source} · ${Math.round(Number(alignment.mae) * 1000)} ms`;
+    $('alignment').title = isLine
+      ? `${alignment.source_url || ''} (public line-level timing; words follow the public line boundaries)`
+      : (alignment.source_url || '');
   } else {
     $('alignment').className = 'alignment lyrics';
     $('alignment').textContent = 'WORD TIMING · LYRICS';

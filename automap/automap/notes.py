@@ -114,10 +114,10 @@ def place_words(
     if audio is not None:
         from . import karaoke, word_model
 
-        karaoke_source = karaoke.BY_SONG.get(song.id)
+        karaoke_source = karaoke.BY_SONG.get(song.id) or karaoke.LINE_BY_SONG.get(song.id)
         if karaoke_source is not None:
             runtime = word_model.load_word_model()
-    placed: list[dict[str, Any]] = []
+    predicted_starts: dict[tuple[int, int], float] = {}
     for word in words:
         line = song.lines[word.line] if word.line < len(song.lines) else {}
         line_words = list(line.get("words") or [])
@@ -140,6 +140,27 @@ def place_words(
                 word.word_index,
                 word_count,
             )
+        predicted_starts[(word.line, word.word_index)] = start
+
+    # A line-level source only knows where each line starts. Apply one
+    # predicted shift per line rather than letting individual word features
+    # introduce jitter inside the line.
+    line_shifts: dict[int, float] = {}
+    if karaoke_source is not None and karaoke_source.level == "line":
+        grouped: dict[int, list[float]] = {}
+        for word in words:
+            start = predicted_starts[(word.line, word.word_index)]
+            grouped.setdefault(word.line, []).append(start - float(word.start))
+        line_shifts = {
+            line_index: float(np.mean(shifts))
+            for line_index, shifts in grouped.items()
+        }
+
+    placed: list[dict[str, Any]] = []
+    for word in words:
+        start = predicted_starts[(word.line, word.word_index)]
+        if line_shifts:
+            start = float(word.start) + line_shifts.get(word.line, 0.0)
         candidates = [
             note
             for note in notes
