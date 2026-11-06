@@ -238,6 +238,53 @@ class CoreTests(unittest.TestCase):
         for link in links:
             self.assertEqual(notes[link["from"]].get("word"), notes[link["to"]].get("word"))
 
+    def test_long_first_word_becomes_a_four_note_run(self) -> None:
+        song = Song(
+            id="held-word",
+            title="Held Word",
+            artist="Tester",
+            album="Tests",
+            duration=8.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
+            lines=[
+                {
+                    "start": 0.0,
+                    "end": 7.0,
+                    "text": "We chase misprinted lies",
+                    "words": [
+                        {"text": "We", "start": 0.0, "end": 4.8},
+                        {"text": "chase", "start": 5.0, "end": 5.8},
+                        {"text": "misprinted", "start": 5.8, "end": 6.8},
+                        {"text": "lies", "start": 6.8, "end": 7.5},
+                    ],
+                }
+            ],
+            raw={},
+        )
+        notes = [
+            {"start": index * 0.5, "dur": 0.4, "midi": 60 + (index % 3)}
+            for index in range(9)
+        ]
+        notes.extend(
+            [
+                {"start": 5.1, "dur": 0.3, "midi": 55},
+                {"start": 5.7, "dur": 0.3, "midi": 56},
+                {"start": 6.2, "dur": 0.3, "midi": 57},
+                {"start": 6.9, "dur": 0.3, "midi": 58},
+            ]
+        )
+        placed = assign_word_runs(song, notes)
+        we_notes = [note for note in notes if note.get("word") == "We"]
+        self.assertEqual(len(we_notes), 4)
+        self.assertGreaterEqual(
+            max(note["start"] + note["dur"] for note in we_notes)
+            - min(note["start"] for note in we_notes),
+            4.0,
+        )
+        self.assertEqual(placed[0]["text"], "We")
+        self.assertGreaterEqual(placed[1]["start"], 5.0)
+
     def test_words_follow_the_note_track(self) -> None:
         song = Song(
             id="word-notes",

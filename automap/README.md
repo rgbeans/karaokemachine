@@ -41,8 +41,10 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 4. A neural denoiser scores each teacher note, chooses a target density, and
    predicts small pitch, onset and duration corrections. When no teacher model
    is available, the older onset-proposal policy is the fallback.
-5. Segments notes into sung word runs by pitch leaps and gaps, so melismas stay
-   attached to the word that carries them instead of spreading lyrics evenly.
+5. Segments notes into sung phrases using real vocal gaps, then into word runs.
+   A long phrase with a short first word (for example the held “We” in
+   Nutshell) becomes four long notes connected by ribbons; the following words
+   start with the next phrase instead of being spread evenly through the hold.
 6. Ensures every timed lyric word gets at least one nearby teacher or audio
    note, so quiet words are not dropped. If the denoiser is much sparser than
    the vocal activity, it falls back to the dense teacher chart.

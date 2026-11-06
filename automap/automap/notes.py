@@ -190,31 +190,101 @@ def place_words(
     return placed
 
 
-def _note_groups(notes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+def _phrase_groups(notes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split a vocal line only where the singer actually breathes/pauses."""
     if not notes:
         return []
     groups: list[list[dict[str, Any]]] = [[notes[0]]]
     for note in notes[1:]:
         previous = groups[-1][-1]
         gap = float(note["start"]) - (float(previous["start"]) + float(previous["dur"]))
-        pitch = abs(int(note["midi"]) - int(previous["midi"]))
-        if gap > 0.35 or pitch >= 5:
+        if gap > 0.35:
             groups.append([note])
         else:
             groups[-1].append(note)
     return groups
 
 
+def _compress_group(
+    group: list[dict[str, Any]],
+    count: int,
+) -> list[dict[str, Any]]:
+    """Turn a long held phrase into a small ribbon run of equal-timed notes."""
+    if not group or count <= 0:
+        return []
+    if len(group) <= count:
+        return [dict(note) for note in group]
+    start = min(float(note["start"]) for note in group)
+    end = max(float(note["start"]) + float(note["dur"]) for note in group)
+    span = max(0.1, end - start)
+    result: list[dict[str, Any]] = []
+    for index in range(count):
+        segment_start = start + span * index / count
+        segment_end = start + span * (index + 1) / count
+        pitches = [
+            int(note["midi"])
+            for note in group
+            if segment_start - 1e-6 <= float(note["start"]) < segment_end
+        ]
+        if not pitches:
+            pitches = [int(group[min(len(group) - 1, index * len(group) // count)]["midi"])]
+        midi = int(round(float(np.median(pitches))))
+        result.append(
+            {
+                "start": round(segment_start, 3),
+                "dur": round(max(0.12, segment_end - segment_start), 3),
+                "midi": midi,
+                "vel": 0.8,
+                "word": None,
+                "wordIndex": None,
+                "line": None,
+                "ribbon": None,
+            }
+        )
+    return result
+
+
+def _distribute_by_weights(
+    notes: list[dict[str, Any]],
+    words: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    if not words:
+        return []
+    if not notes:
+        return [[] for _ in words]
+    ordered = sorted(notes, key=lambda item: (item["start"], item["midi"]))
+    if len(ordered) < len(words):
+        result: list[list[dict[str, Any]]] = []
+        for index in range(len(words)):
+            position = round(index * (len(ordered) - 1) / max(1, len(words) - 1))
+            result.append([ordered[int(position)]])
+        return result
+    weights = [max(2, len(str(word.get("text") or "").strip()) + 1) for word in words]
+    total = sum(weights)
+    counts = [max(1, int(round(len(ordered) * weight / total))) for weight in weights]
+    while sum(counts) > len(ordered):
+        index = max(range(len(counts)), key=lambda item: counts[item])
+        counts[index] -= 1
+    while sum(counts) < len(ordered):
+        counts[-1] += 1
+    result = []
+    cursor = 0
+    for count in counts:
+        result.append(ordered[cursor : cursor + count])
+        cursor += count
+    return result
+
+
 def assign_word_runs(
     song: Song,
     notes: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Assign notes to words by sung runs, not by equal word index.
+    """Assign notes to words by actual sung phrases, not equal word spacing.
 
-    A run boundary is a large gap or a large pitch leap. The first and last
-    runs anchor the first and last words; intermediate runs are distributed
-    across the intermediate words by text length. This keeps melismas attached
-    to the word that carries them and stops words from being evenly spaced.
+    A long first phrase with a short first word is treated as a held word and
+    compressed into a four-note ribbon run. The remaining words are distributed
+    across the later phrase by text length, so they start where the second
+    phrase actually starts.
     """
     if not notes:
         return place_words(song, notes)
@@ -256,43 +326,52 @@ def assign_word_runs(
                 )
             continue
 
-        groups = _note_groups(candidates)
+        groups = _phrase_groups(candidates)
         assignments: list[list[dict[str, Any]]] = [[] for _ in words]
-        if len(groups) >= len(words):
+        first_word = str(words[0].get("text") or "").strip().lower()
+        first_group = groups[0] if groups else []
+        first_span = (
+            max(float(note["start"]) + float(note["dur"]) for note in first_group)
+            - min(float(note["start"]) for note in first_group)
+            if first_group
+            else 0.0
+        )
+        held_first = (
+            len(words) >= 2
+            and len(first_word.replace("'", "")) <= 3
+            and first_span >= 1.5
+            and len(first_group) >= 4
+        )
+        if held_first:
+            compressed = _compress_group(first_group, 4)
+            assignments[0] = compressed
+            first_ids = {id(note) for note in first_group}
+            notes[:] = [note for note in notes if id(note) not in first_ids]
+            notes.extend(compressed)
+            notes.sort(key=lambda note: (float(note["start"]), int(note["midi"])))
+            remaining = [note for group in groups[1:] for note in group]
+            if remaining:
+                assignments[1:] = _distribute_by_weights(remaining, words[1:])
+        elif len(groups) >= len(words):
             if len(words) == 1:
-                assignments[0] = [note for group in groups for note in group]
+                assignments[0] = candidates
             else:
                 assignments[0] = groups[0]
                 assignments[-1] = groups[-1]
                 middle_groups = groups[1:-1]
                 middle_words = words[1:-1]
                 if middle_words and middle_groups:
-                    weights = [max(2, len(str(word.get("text") or "")) + 1) for word in middle_words]
-                    total = sum(weights)
-                    cursor = 0
-                    for index, weight in enumerate(weights):
-                        remaining_words = len(middle_words) - index - 1
-                        end = len(middle_groups) - remaining_words if remaining_words else len(middle_groups)
-                        end = max(cursor + 1, min(end, cursor + max(1, round(len(middle_groups) * weight / total))))
-                        assignments[1 + index] = [
-                            note for group in middle_groups[cursor:end] for note in group
-                        ]
-                        cursor = end
-                    # Anything left belongs to the closest middle word.
-                    if cursor < len(middle_groups):
-                        assignments[1 + len(middle_words) - 1].extend(
-                            note for group in middle_groups[cursor:] for note in group
-                        )
+                    distributed = _distribute_by_weights(
+                        [note for group in middle_groups for note in group],
+                        middle_words,
+                    )
+                    for index, group_notes in enumerate(distributed):
+                        assignments[1 + index] = group_notes
+        else:
+            assignments = _distribute_by_weights(candidates, words)
+
         if any(not assignment for assignment in assignments):
-            # Too few pitch runs: fall back to proportional note distribution.
-            for word_index, word in enumerate(words):
-                if len(candidates) == 1:
-                    position = 0
-                elif len(candidates) >= len(words):
-                    position = round(word_index * (len(candidates) - 1) / max(1, len(words) - 1))
-                else:
-                    position = int(word_index * len(candidates) / max(1, len(words)))
-                assignments[word_index] = [candidates[min(len(candidates) - 1, position)]]
+            assignments = _distribute_by_weights(candidates, words)
 
         for word_index, word in enumerate(words):
             assigned = assignments[word_index]
