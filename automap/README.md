@@ -220,6 +220,10 @@ bar to jump anywhere in the song.
 - Green **GOOD** thumbs-up gives reward `+1` and advances to the next song.
 - **NEXT** skips the current candidate and moves to the next song without
   updating the model.
+- **REGENERATE** discards the current candidate and rebuilds this song with the
+  active generator. Use it when an old candidate is still lingering from before
+  the teacher pipeline was installed. The old archive is kept; the queue position
+  is not advanced.
 - The model is saved after every grade.
 
 Keyboard shortcuts:
@@ -229,6 +233,7 @@ Keyboard shortcuts:
 | `←` / `↓` | Bad map |
 | `→` / `↑` | Good map |
 | `N` | Skip to the next song |
+| `R` | Regenerate the current song |
 | `Space` | Play / pause |
 
 If KaraokeMachine is open, restart it after a new candidate is written to load

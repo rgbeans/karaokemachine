@@ -81,6 +81,7 @@ class TeacherRuntime:
     feature_mean: np.ndarray
     feature_std: np.ndarray
     metrics: dict[str, Any]
+    step: int = 0
 
 
 def _suggestion_cache_path(song: Song) -> Path:
@@ -545,6 +546,7 @@ def train_teacher_model(epochs: int = 300, seed: int = 4) -> dict[str, Any]:
         feature_mean=mean,
         feature_std=std,
         metrics={},
+        step=0,
     )
     metrics: dict[str, Any] = {
         "model": "teacher-note denoiser",
@@ -605,10 +607,14 @@ def load_teacher_model() -> TeacherRuntime | None:
         return None
     try:
         payload = torch.load(TEACHER_MODEL_PATH, map_location="cpu", weights_only=False)
-        if payload.get("feature_names") != list(TEACHER_FEATURE_NAMES):
+        mean = np.asarray(payload["feature_mean"], dtype=np.float32)
+        names = payload.get("feature_names")
+        if names is not None and list(names) != list(TEACHER_FEATURE_NAMES):
             print("warning: teacher checkpoint uses an older feature layout")
             return None
-        mean = np.asarray(payload["feature_mean"], dtype=np.float32)
+        if names is None and mean.size != TEACHER_FEATURE_COUNT:
+            print("warning: teacher checkpoint has an unknown feature layout")
+            return None
         std = np.asarray(payload["feature_std"], dtype=np.float32)
         model = NotePolicy(int(mean.size), hidden=int(payload.get("hidden", 128)))
         model.load_state_dict(payload["model"])
@@ -618,6 +624,7 @@ def load_teacher_model() -> TeacherRuntime | None:
             feature_mean=mean,
             feature_std=std,
             metrics=payload.get("metrics") or {},
+            step=int(payload.get("step", 0)),
         )
     except Exception as error:
         print(f"warning: could not load teacher model: {error}")

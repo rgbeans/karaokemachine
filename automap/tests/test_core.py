@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -43,6 +45,28 @@ class CoreTests(unittest.TestCase):
             self.assertLessEqual(float(output["pitch_offset"].abs().max()), 3.0)
             self.assertLessEqual(float(output["onset_offset"].abs().max()), 0.08)
             self.assertLessEqual(float(output["log_scale"].abs().max()), 1.5)
+
+    def test_checkpoint_preserves_feature_names(self) -> None:
+        from automap.policy import Checkpoint, load_checkpoint, save_checkpoint
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "checkpoint.pt"
+            checkpoint = Checkpoint(
+                model=NotePolicy(FEATURE_COUNT, hidden=16),
+                feature_mean=torch.zeros(FEATURE_COUNT).numpy(),
+                feature_std=torch.ones(FEATURE_COUNT).numpy(),
+                optimizer_state=None,
+                step=7,
+                reward_baseline=0.25,
+                reward_count=3,
+                hidden=16,
+                path=path,
+                feature_names=[f"feature_{index}" for index in range(FEATURE_COUNT)],
+            )
+            save_checkpoint(checkpoint)
+            loaded = load_checkpoint(path)
+            self.assertEqual(loaded.feature_names, checkpoint.feature_names)
+            self.assertEqual(loaded.step, 7)
 
     def test_map_document_has_playable_shape(self) -> None:
         song = Song(

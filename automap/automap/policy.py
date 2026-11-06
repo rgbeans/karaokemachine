@@ -30,6 +30,7 @@ class Checkpoint:
     reward_count: int
     hidden: int
     path: Path
+    feature_names: list[str] | None = None
 
 
 def as_tensor(features: np.ndarray) -> torch.Tensor:
@@ -135,6 +136,7 @@ def save_checkpoint(checkpoint: Checkpoint) -> None:
             "reward_baseline": checkpoint.reward_baseline,
             "reward_count": checkpoint.reward_count,
             "hidden": checkpoint.hidden,
+            "feature_names": checkpoint.feature_names,
         },
         checkpoint.path,
     )
@@ -162,6 +164,7 @@ def load_checkpoint(path: Path) -> Checkpoint:
         reward_count=int(payload.get("reward_count", 0)),
         hidden=hidden,
         path=path,
+        feature_names=payload.get("feature_names"),
     )
 
 

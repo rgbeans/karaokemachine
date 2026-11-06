@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .config import FEATURE_COUNT, MODEL_PATH
+from .config import FEATURE_COUNT, FEATURE_NAMES, MODEL_PATH
 from .dataset import TrackData, augment_features, load_track, normalize
 from .maps import load_approved_tracks
 from .model import NotePolicy
@@ -285,6 +285,7 @@ def train(
         reward_count=0,
         hidden=128,
         path=MODEL_PATH,
+        feature_names=list(FEATURE_NAMES),
     )
     save_checkpoint(checkpoint)
     elapsed = time.time() - started

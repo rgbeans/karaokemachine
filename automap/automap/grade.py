@@ -109,6 +109,10 @@ def update_from_grade(
         # use a different feature layout and need their own replay anchor.
         anchor_data = None
     checkpoint = load_checkpoint(model_path)
+    if model_path == TEACHER_MODEL_PATH and checkpoint.feature_names is None:
+        from .teacher import TEACHER_FEATURE_NAMES
+
+        checkpoint.feature_names = list(TEACHER_FEATURE_NAMES)
     reward = REWARD_BY_GRADE[grade]
     baseline = checkpoint.reward_baseline if checkpoint.reward_count > 0 else 0.0
     advantage = float(np.clip(reward - baseline, -2.0, 2.0))

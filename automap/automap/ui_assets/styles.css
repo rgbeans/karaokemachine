@@ -131,6 +131,22 @@ h1 {
   font-size: 8px;
   letter-spacing: 0.14em;
 }
+.rebuild {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 209, 102, 0.42);
+  border-radius: 999px;
+  background: rgba(255, 209, 102, 0.07);
+  color: var(--gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rebuild:hover { background: rgba(255, 209, 102, 0.14); border-color: rgba(255, 209, 102, 0.7); }
+.rebuild:disabled { opacity: 0.4; cursor: default; }
 #songSelect {
   min-height: 30px;
   max-width: min(380px, 52vw);

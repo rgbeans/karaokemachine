@@ -3,6 +3,7 @@ const canvas = $('canvas');
 const networkCanvas = $('networkCanvas');
 const networkMeta = $('networkMeta');
 const songSelect = $('songSelect');
+const rebuild = $('rebuild');
 const vocals = $('vocals');
 const backing = $('backing');
 const seek = $('seek');
@@ -114,6 +115,10 @@ function statusFor(state) {
       $('status').className = 'status';
       return `switched to ${event.title} · ${event.grades_for_song || 0} graded there · listen, then grade`;
     }
+    if (event.kind === 'regenerate') {
+      $('status').className = 'status';
+      return `rebuilt ${event.title} with the current generator · take ${event.generated_for_song || 0}`;
+    }
     $('status').className = 'status';
     return `skipped ${event.title} · next ${state.next_title}`;
   }
@@ -163,7 +168,11 @@ function applyState(next) {
   $('artist').textContent = state.artist || '';
   $('meta').textContent = `${state.note_count} notes · take ${state.generated_for_song} · step ${state.model_step}`;
   const alignment = state.word_alignment;
-  if (alignment && alignment.mae != null) {
+  if (alignment && alignment.level === 'notes') {
+    $('alignment').className = 'alignment';
+    $('alignment').textContent = 'WORDS · NOTE-ALIGNED';
+    $('alignment').title = 'Words are placed on the generated note track';
+  } else if (alignment && alignment.mae != null) {
     const isLine = alignment.level === 'line';
     const source = isLine ? 'LRCLIB' : 'USDB';
     const kind = isLine ? 'LINE TIMING' : 'WORD TIMING';
@@ -505,6 +514,7 @@ function setBusy(value, message) {
   $('down').disabled = value;
   $('up').disabled = value;
   $('next').disabled = value;
+  rebuild.disabled = value;
   songSelect.disabled = value;
   $('loading').hidden = !value;
   if (message) $('loading-text').textContent = message;
@@ -561,6 +571,22 @@ async function nextCandidate() {
   }
 }
 
+async function regenerateMap() {
+  if (!state || busy) return;
+  if (!window.confirm(`Discard this ${state.title} candidate and regenerate it with the current teacher + denoiser?`)) {
+    return;
+  }
+  setBusy(true, `Rebuilding ${state.title} with the current teacher + denoiser…`);
+  try {
+    const payload = await request('/api/regenerate', { method: 'POST' });
+    applyState(payload.state);
+  } catch (error) {
+    $('status').textContent = String(error.message || error);
+  } finally {
+    setBusy(false);
+  }
+}
+
 function sendPosition(beacon = false) {
   if (!state) return;
   const payload = JSON.stringify({
@@ -582,6 +608,7 @@ function sendPosition(beacon = false) {
 $('down').addEventListener('click', () => grade(1));
 $('up').addEventListener('click', () => grade(5));
 $('next').addEventListener('click', nextCandidate);
+rebuild.addEventListener('click', regenerateMap);
 songSelect.addEventListener('change', async () => {
   if (!state || busy) return;
   const songId = songSelect.value;
@@ -666,6 +693,9 @@ window.addEventListener('keydown', (event) => {
   } else if (event.key.toLowerCase() === 'n') {
     event.preventDefault();
     nextCandidate();
+  } else if (event.key.toLowerCase() === 'r') {
+    event.preventDefault();
+    regenerateMap();
   } else if (event.code === 'Space') {
     event.preventDefault();
     $('play').click();

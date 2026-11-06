@@ -175,10 +175,11 @@ def generate_candidate(
         if len(notes) == 0:
             raise RuntimeError("the teacher model produced no notes")
         note_alignment = "teacher"
+        step = runtime.step
         note_source = {
             "source": "Teacher melody + denoiser",
             "label": "TEACHER + DENOISER",
-            "model_step": 0,
+            "model_step": step,
             "teacher_notes": len(teacher.load_or_build_suggestions(song)),
         }
         words_from_notes = True

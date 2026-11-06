@@ -235,6 +235,11 @@ class Session:
                 max(0.0, float(progress.get("last_position") or 0.0)),
                 max(0.0, song.duration - 0.5),
             )
+        word_alignment_payload = (
+            {"level": "notes", "source": "Generated note track", "label": "NOTE-ALIGNED"}
+            if document.get("wordAlignment") == "notes"
+            else word_model.alignment_for_song(song.id)
+        )
         self.state = {
             "song_id": song.id,
             "title": song.title,
@@ -270,7 +275,7 @@ class Session:
             "generated_for_song": int(progress.get("generated") or 0),
             "last_event": self.last_event,
             "network": self._network_summary(self.active_model_path),
-            "word_alignment": word_model.alignment_for_song(song.id),
+            "word_alignment": word_alignment_payload,
             "note_alignment": (
                 document.get("noteSource")
                 or (
@@ -417,6 +422,28 @@ class Session:
                     self._generate_next()
             else:
                 self._generate_next()
+            return self.state or {}
+
+    def regenerate_current(self) -> dict[str, Any]:
+        """Force a fresh candidate for the current song with the active model."""
+        with self.lock:
+            if self.current_target is None:
+                raise RuntimeError("no current target to regenerate")
+            # Do not delete the old pending candidate first. generate_candidate
+            # overwrites it only after a new map has been written successfully.
+            info = generate_candidate(self.current_target.song_id, install=self.install)
+            mark_retried(self.queue, self.current_target, info)
+            self.last_event = {
+                "kind": "regenerate",
+                "grade": 0,
+                "reward": 0.0,
+                "title": self.current_target.title,
+                "album": self.current_target.album,
+                "generated_for_song": int(
+                    self.queue.songs.get(self.current_target.song_id, {}).get("generated") or 0
+                ),
+            }
+            self._set_state(info)
             return self.state or {}
 
     def next_candidate(self) -> dict[str, Any]:
@@ -604,7 +631,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in {"/api/grade", "/api/next", "/api/song", "/api/position"}:
+        if path not in {
+            "/api/grade",
+            "/api/next",
+            "/api/song",
+            "/api/position",
+            "/api/regenerate",
+        }:
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -630,7 +663,9 @@ class Handler(BaseHTTPRequestHandler):
                 state = self.session.choose_song(str(payload.get("song_id") or ""))
                 self._send_json(200, {"state": state})
                 return
-            if path == "/api/next":
+            if path == "/api/regenerate":
+                state = self.session.regenerate_current()
+            elif path == "/api/next":
                 state = self.session.next_candidate()
             else:
                 grade = int(payload.get("grade", 0))
