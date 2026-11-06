@@ -29,8 +29,12 @@ def _pitch_median(audio: dict[str, Any], start: float, end: float) -> float | No
     return float(np.median(finite)) if finite.size else None
 
 
-def public_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]]:
-    source = karaoke.NOTE_BY_SONG.get(song.id)
+def public_notes(
+    song: Song,
+    audio: dict[str, Any],
+    source: karaoke.KaraokeSource | None = None,
+) -> list[dict[str, Any]]:
+    source = source or karaoke.NOTE_BY_SONG.get(song.id)
     if source is None:
         return []
     try:

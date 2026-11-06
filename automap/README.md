@@ -186,12 +186,15 @@ word-level calibrated song, `LINE TIMING · LRCLIB · N ms` for Sunshine, and
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
-**Note tracks** for the 21 matched USDB songs are rebuilt from the public
-UltraStar note lines rather than the one-song neural policy. Their note times use the audio-verified note offset, and
-each pitch is placed in the octave nearest the local vocal track. The UI labels
-them `NOTES · USDB CALIBRATED`. Sunshine and the other targets use the teacher +
-denoiser track and show `NOTES · TEACHER + DENOISER`. Their words are placed on
-those notes and their legato runs get explicit ribbon links.
+**Note tracks** for 20 matched USDB songs are rebuilt from the public UltraStar
+note lines rather than the one-song neural policy. Their note times use the
+audio-verified note offset, and each pitch is placed in the octave nearest the
+local vocal track. The UI labels them `NOTES · USDB CALIBRATED`. Nutshell's USDB
+chart is missing the opening phrase (it begins at 62.7 s while the vocal begins
+at 59.6 s), so Nutshell is used for training only and generation falls back to
+the teacher model. Sunshine and the other targets use the teacher + denoiser
+track and show `NOTES · TEACHER + DENOISER`. Their words are placed on those
+notes and their legato runs get explicit ribbon links.
 
 ## Grade in the UI
 

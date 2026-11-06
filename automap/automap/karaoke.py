@@ -89,16 +89,17 @@ BY_INDEX = {index: source for index, source in enumerate(SOURCES)}
 # Public note tracks that are useful for teacher supervision even when we have
 # not calibrated their lyric-word timing yet. The registry is produced by
 # matching the local imports against the public USDB artist index.
-def _load_match_sources() -> tuple[KaraokeSource, ...]:
+def _load_match_sources() -> tuple[tuple[KaraokeSource, ...], set[str]]:
     path = AUTOMAP_DIR / "usdb_matches.json"
     if not path.exists():
-        return ()
+        return (), set()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception as error:
         print(f"warning: could not read {path}: {error}")
-        return ()
+        return (), set()
     sources: list[KaraokeSource] = []
+    direct_ids: set[str] = set()
     for item in payload.get("matches") or []:
         song_id = str(item.get("song_id") or "").strip()
         usdb_id = int(item.get("usdb_id") or 0)
@@ -113,19 +114,30 @@ def _load_match_sources() -> tuple[KaraokeSource, ...]:
                 note_offset=float(item.get("offset") or 0.0),
             )
         )
-    return tuple(sources)
+        if bool(item.get("direct", True)):
+            direct_ids.add(song_id)
+    return tuple(sources), direct_ids
 
 
+# Nutshell's public chart is missing the opening phrase; keep it for teacher
+# training but do not use it as a direct note track.
 _FALLBACK_NOTE_SOURCES: tuple[KaraokeSource, ...] = (
     KaraokeSource("yt-G23iLGhh9lo", 17638, "Nutshell", 0.0, -0.15),
 )
+_MATCH_SOURCES, _DIRECT_MATCH_IDS = _load_match_sources()
 NOTE_SOURCES: tuple[KaraokeSource, ...] = tuple(
     {
         source.song_id: source
-        for source in (*_FALLBACK_NOTE_SOURCES, *_load_match_sources())
+        for source in (*_FALLBACK_NOTE_SOURCES, *_MATCH_SOURCES)
     }.values()
 )
+DIRECT_NOTE_SOURCES: tuple[KaraokeSource, ...] = tuple(
+    source for source in NOTE_SOURCES if source.song_id in _DIRECT_MATCH_IDS
+)
 NOTE_BY_SONG = {
+    source.song_id: source for source in (*SOURCES, *DIRECT_NOTE_SOURCES)
+}
+TRAINING_NOTE_BY_SONG = {
     source.song_id: source for source in (*SOURCES, *NOTE_SOURCES)
 }
 

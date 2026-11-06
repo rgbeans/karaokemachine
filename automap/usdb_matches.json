@@ -95,7 +95,8 @@
       "voiced": 0.996,
       "flux": 20.0,
       "notes": 86,
-      "accepted": true
+      "accepted": true,
+      "direct": false
     },
     {
       "song_id": "yt-GJvGf_ifiKw",

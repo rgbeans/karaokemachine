@@ -174,7 +174,7 @@ class CoreTests(unittest.TestCase):
     def test_public_note_calibration_sources(self) -> None:
         from automap import karaoke, note_calibration
 
-        for source in (*karaoke.SOURCES, *karaoke.NOTE_SOURCES):
+        for source in (*karaoke.SOURCES, *karaoke.DIRECT_NOTE_SOURCES):
             alignment = note_calibration.alignment_for_song(source.song_id)
             self.assertIsNotNone(alignment)
             self.assertEqual(alignment["usdb_id"], source.usdb_id)
@@ -182,7 +182,8 @@ class CoreTests(unittest.TestCase):
         them_bones = karaoke.BY_SONG["yt-zTuD8k3JvxQ"]
         self.assertEqual(them_bones.effective_note_offset, 3.75)
         self.assertEqual(
-            karaoke.NOTE_BY_SONG["yt-G23iLGhh9lo"].effective_note_offset, -0.15
+            karaoke.TRAINING_NOTE_BY_SONG["yt-G23iLGhh9lo"].effective_note_offset,
+            -0.15,
         )
 
     def test_ribbon_links_cover_legato_notes(self) -> None:
@@ -237,7 +238,8 @@ class CoreTests(unittest.TestCase):
         from automap import karaoke
 
         self.assertGreaterEqual(len(karaoke.NOTE_SOURCES), 15)
-        self.assertIn("yt-G23iLGhh9lo", karaoke.NOTE_BY_SONG)
+        self.assertIn("yt-G23iLGhh9lo", karaoke.TRAINING_NOTE_BY_SONG)
+        self.assertNotIn("yt-G23iLGhh9lo", karaoke.NOTE_BY_SONG)
         self.assertIn("yt-qgaRVvAKoqQ", karaoke.NOTE_BY_SONG)
         self.assertLess(
             karaoke.NOTE_BY_SONG["yt-qgaRVvAKoqQ"].effective_note_offset, 1.0

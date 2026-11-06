@@ -317,9 +317,11 @@ def _reference_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]] 
     for track in load_approved_tracks():
         if track.song_id == song.id:
             return load_level(track.song_id, track.map_relative).notes
-    public = note_calibration.public_notes(song, audio)
-    if public:
-        return public
+    source = karaoke.TRAINING_NOTE_BY_SONG.get(song.id)
+    if source is not None:
+        public = note_calibration.public_notes(song, audio, source)
+        if public:
+            return public
     return None
 
 
