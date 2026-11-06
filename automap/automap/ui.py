@@ -163,6 +163,25 @@ class Session:
             )
         return payload
 
+    def _raw_pitch_payload(self, song: Song) -> list[list[float]]:
+        try:
+            audio = load_or_extract(song)
+            fps = float(audio["fps"])
+            midi = np.asarray(audio["midi"], dtype=np.float32)
+            voiced = np.asarray(audio["voiced"], dtype=bool)
+            points: list[list[float]] = []
+            # 25 Hz is enough for the sidescrolling preview while keeping the
+            # state payload small.
+            for index in range(0, midi.size, 2):
+                value = midi[index]
+                if not voiced[index] or not np.isfinite(value):
+                    continue
+                points.append([round(index / fps, 3), round(float(value), 2)])
+            return points
+        except Exception as error:
+            print(f"warning: raw pitch unavailable for {song.title}: {error}")
+            return []
+
     def _set_state(self, info: dict[str, Any]) -> None:
         target = self.current_target
         song = self.current_song
@@ -257,6 +276,7 @@ class Session:
                 "backing_available": backing_available,
             },
             "notes": document.get("notes") or [],
+            "raw_pitch": self._raw_pitch_payload(song),
             "lines": document.get("lines") or [],
             "placedWords": document.get("placedWords") or [],
             "ribbonLinks": document.get("ribbonLinks") or [],

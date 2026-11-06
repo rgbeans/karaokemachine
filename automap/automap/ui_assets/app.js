@@ -12,6 +12,7 @@ let busy = false;
 let raf = 0;
 let vocalsOn = true;
 let backingOn = true;
+let rawPitchOn = true;
 let seeking = false;
 let networkPreviousLayers = null;
 let networkPulseUntil = 0;
@@ -59,6 +60,9 @@ function updateToggleLabels() {
   $('backingToggle').disabled = !backingReady;
   $('vocalsToggle').classList.toggle('on', vocalsOn && vocalsReady);
   $('backingToggle').classList.toggle('on', backingOn && backingReady);
+  $('pitchToggle').classList.toggle('on', rawPitchOn);
+  $('pitchToggle').textContent = `RAW PITCH ${rawPitchOn ? 'ON' : 'OFF'}`;
+  $('pitchToggle').setAttribute('aria-pressed', String(rawPitchOn));
   $('vocalsToggle').textContent = `VOCALS ${vocalsOn && vocalsReady ? 'ON' : 'OFF'}`;
   $('backingToggle').textContent = `BACKING ${backingOn && backingReady ? 'ON' : 'OFF'}`;
   $('vocalsToggle').setAttribute('aria-pressed', String(vocalsOn && vocalsReady));
@@ -412,6 +416,36 @@ function resizeCanvas() {
   return { dpr, width: rect.width, height: rect.height };
 }
 
+function drawRawPitch(ctx, state, xFor, yFor, start, span, low, high, width) {
+  const points = state.raw_pitch || [];
+  if (!rawPitchOn || points.length < 2) return;
+  ctx.save();
+  ctx.lineWidth = 1.15;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(124, 196, 255, 0.36)';
+  let previous = null;
+  for (const point of points) {
+    const time = Number(point[0]);
+    const midi = Number(point[1]);
+    if (!Number.isFinite(time) || !Number.isFinite(midi)) continue;
+    if (time < start - 0.5 || time > start + span + 0.5) {
+      previous = null;
+      continue;
+    }
+    const x = xFor(time);
+    const y = yFor(midi);
+    if (previous && time - previous.time <= 0.18 && Math.abs(midi - previous.midi) <= 2.5) {
+      ctx.beginPath();
+      ctx.moveTo(previous.x, previous.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+    previous = { time, x, y, midi };
+  }
+  ctx.restore();
+}
+
+
 function drawRibbons(ctx, state, xFor, yFor, start, span, low, high, noteHeight, width) {
   const notes = state.notes || [];
   const links = state.ribbonLinks || [];
@@ -493,6 +527,7 @@ function draw() {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const noteHeight = Math.max(5, Math.min(13, innerH / Math.max(10, high - low) * 0.72));
+  drawRawPitch(ctx, state, xFor, yFor, start, span, low, high, width);
   drawRibbons(ctx, state, xFor, yFor, start, span, low, high, noteHeight, width);
   for (const note of state.notes || []) {
     if (note.start + note.dur < start - 0.2 || note.start > start + span + 0.2) continue;
@@ -669,6 +704,11 @@ $('vocalsToggle').addEventListener('click', () => {
 $('backingToggle').addEventListener('click', () => {
   backingOn = !backingOn;
   updateToggleLabels();
+});
+$('pitchToggle').addEventListener('click', () => {
+  rawPitchOn = !rawPitchOn;
+  updateToggleLabels();
+  draw();
 });
 $('play').addEventListener('click', () => {
   const master = masterElement();

@@ -247,6 +247,8 @@ The transport has:
 - a whole-song seek bar
 - **VOCALS ON/OFF**
 - **BACKING ON/OFF**
+- **RAW PITCH ON/OFF**, which overlays the frame-level guide pitch in blue
+  behind the mapped notes
 - current time and queue status
 
 Click or drag the note preview to seek within the visible window. Use the seek
