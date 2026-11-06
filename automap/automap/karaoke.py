@@ -29,11 +29,19 @@ class KaraokeSource:
     song_id: str
     usdb_id: int
     title: str
-    # USDB karaoke timeline -> local song timeline.
+    # USDB karaoke timeline -> local song timeline for lyric words.
     offset: float
+    # Note tracks can need a different offset from lyric words because the
+    # public chart and the local recording can have different intros. When
+    # unset, fall back to the word offset.
+    note_offset: float | None = None
 
     kind = "usdb"
     level = "word"
+
+    @property
+    def effective_note_offset(self) -> float:
+        return self.offset if self.note_offset is None else self.note_offset
 
     @property
     def source_url(self) -> str:
@@ -68,10 +76,12 @@ TimingSource = Union[KaraokeSource, LineSource]
 
 
 SOURCES: tuple[KaraokeSource, ...] = (
-    KaraokeSource("yt-zTuD8k3JvxQ", 1597, "Them Bones", 0.40),
-    KaraokeSource("yt-6JA25BIxgtk", 24234, "We Die Young", 0.35),
-    KaraokeSource("yt-r80HF68KM8g", 16056, "No Excuses", -3.70),
-    KaraokeSource("yt-Nco_kh8xJDs", 63, "Would?", -0.25),
+    # note_offset was measured against the local audio by matching public note
+    # onsets to local voiced pitch; it is not always the lyric-word offset.
+    KaraokeSource("yt-zTuD8k3JvxQ", 1597, "Them Bones", 0.40, 3.75),
+    KaraokeSource("yt-6JA25BIxgtk", 24234, "We Die Young", 0.35, 0.20),
+    KaraokeSource("yt-r80HF68KM8g", 16056, "No Excuses", -3.70, -3.55),
+    KaraokeSource("yt-Nco_kh8xJDs", 63, "Would?", -0.25, 0.15),
 )
 BY_SONG = {source.song_id: source for source in SOURCES}
 BY_INDEX = {index: source for index, source in enumerate(SOURCES)}

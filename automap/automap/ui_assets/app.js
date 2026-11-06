@@ -178,9 +178,11 @@ function applyState(next) {
     $('alignment').title = 'No public karaoke timing calibration for this song';
   }
   if (state.note_alignment) {
+    const label = state.note_alignment.label
+      || (String(state.note_alignment.source || '').includes('USDB') ? 'USDB CALIBRATED' : 'CALIBRATED');
     $('noteAlignment').className = 'alignment note';
-    $('noteAlignment').textContent = 'NOTES · USDB CALIBRATED';
-    $('noteAlignment').title = state.note_alignment.source_url || '';
+    $('noteAlignment').textContent = `NOTES · ${label}`;
+    $('noteAlignment').title = state.note_alignment.source_url || state.note_alignment.source || '';
   } else {
     $('noteAlignment').className = 'alignment note policy';
     $('noteAlignment').textContent = 'NOTES · NEURAL POLICY';

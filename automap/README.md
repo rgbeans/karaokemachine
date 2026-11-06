@@ -1,16 +1,21 @@
 # KaraokeMachine Autogenerator
 
-A standalone neural autogenerator for KaraokeMachine maps. It learns from one
-explicitly approved finished map, generates candidates for the Alice in Chains
-albums **Dirt**, **Facelift**, and **Jar of Flies**, and updates its policy from
-thumbs-up / thumbs-down grades.
+A standalone neural autogenerator for KaraokeMachine maps. It uses the app's
+dense vocal-melody teacher, a denoiser trained on one explicitly approved
+finished map plus public USDB note tracks, and thumbs-up / thumbs-down grades.
+It generates candidates for the Alice in Chains albums **Dirt**, **Facelift**,
+and **Jar of Flies**.
 
 This folder is independent of the Rust app. Nothing here is compiled into
 KaraokeMachine.
 
 ## Data policy
 
-**Training data:** only maps listed in [`approved.json`](approved.json).
+**Note-policy training data:** only maps listed in [`approved.json`](approved.json).
+
+**Teacher training data:** the approved map plus the public USDB note tracks
+documented below. No draft map is ever read as a teacher chart, training label,
+or generation seed; teacher charts are regenerated from the vocal stem.
 
 The allowlist contains exactly one finished map:
 
@@ -31,16 +36,18 @@ targets are ignored; the model generates a new candidate from the vocal audio.
 1. Decodes the vocal/guide track with `ffmpeg`.
 2. Extracts frame-level YIN pitch, volume, spectral onset and lyric-alignment
    features.
-3. Proposes note onsets from vocal onsets, word starts and voiced segments.
-4. A small neural policy scores each proposal and predicts pitch correction,
-   onset correction and note duration.
-5. Ensures every timed lyric word with a nearby vocal proposal gets at least one
-   note, so intros and quiet lyric lines are not empty.
-6. Writes a playable draft map with notes, ribbons, lyric lines, and placed
-   lyric words. For songs with public karaoke timing data, a second small
-   network calibrates the word times against those public versions. Sunshine
-   uses public line-level LRCLIB timing, so only its line placement is
-   calibrated.
+3. Runs the app's dense melody extractor over the isolated vocal stem. Its
+   stable-pitch segments are the teacher chart.
+4. A neural denoiser scores each teacher note, chooses a target density, and
+   predicts small pitch, onset and duration corrections. When no teacher model
+   is available, the older onset-proposal policy is the fallback.
+5. Ensures every timed lyric word gets at least one nearby teacher or audio
+   note, so quiet words are not dropped.
+6. Writes a playable draft map with notes, explicit ribbon links, lyric lines,
+   and note-driven placed words. For songs with public karaoke timing data, a
+   second small network calibrates the word times against those public
+   versions. Sunshine uses public line-level LRCLIB timing, so only its line
+   placement is calibrated.
    - `assets/songs/<song-id>/maps/AI-Candidate.json`
    - an archive copy under `automap/candidates/<song-id>/`
 7. Plays the map in the grading window. A thumbs-down updates the policy and
@@ -78,7 +85,41 @@ The first run extracts and caches the vocal analysis. Training prints how many
 approved notes have a matching onset proposal, full-song reconstruction note
 F1, held-out candidate F1, and the checkpoint path.
 
-The checkpoint is `automap/checkpoints/note_policy.pt`.
+The one-song policy checkpoint is `automap/checkpoints/note_policy.pt`. It is
+kept as a fallback and for the original grading loop.
+
+## Teacher-guided note generation
+
+The strongest prior is already in the app: `tools/analyze_vocals.py` tracks the
+isolated vocal stem and segments it into a dense melody chart. `automap` runs
+that teacher on each target, caches the result under `cache/suggestions/`, and
+trains a **note denoiser** over it instead of asking a small policy to invent
+onsets from an arbitrary candidate grid.
+
+```bash
+cd automap
+.venv/bin/python -m automap train-teacher
+```
+
+Training pairs the teacher chart with the hand-mapped **Man in the Box** chart
+and the four public USDB note tracks. The denoiser learns which teacher notes a
+human/public chart keeps, plus small pitch, onset and duration corrections. It
+is saved as `checkpoints/teacher_policy.pt`; the old one-song checkpoint is not
+overwritten.
+
+| Reference chart | Teacher notes | Generated notes | Note F1 | Raw teacher F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Man in the Box | 514 | 150 | **0.760** | 0.375 |
+| Them Bones | 326 | 83 | **0.444** | 0.204 |
+| We Die Young | 304 | 87 | **0.657** | 0.333 |
+| No Excuses | 370 | 116 | **0.453** | 0.240 |
+| Would? | 371 | 127 | **0.620** | 0.336 |
+
+The public note tracks now use a **separate audio-verified note offset**, not
+the lyric-word offset. This fixes the large intro mismatch on Them Bones
+(`note_offset = 3.75 s`). Public-note and teacher maps place lyric words on the
+generated notes and generate explicit ribbon links for legato runs, so the
+stage does not fall back to disconnected notes.
 
 ## Train word timing against public karaoke versions
 
@@ -109,24 +150,26 @@ The committed calibration result is in `word_metrics.json`:
 version and shifted by 0.29 s to match the local audio, so the line-start
 baseline is already aligned. Its reported error is **line-level**, not
 word-level: LRCLIB does not provide word or note timestamps. Sunshine's word
-pills follow its public line boundaries; individual word times remain evenly
-distributed within each line.
+pills follow its generated note track; its public line boundaries are used for
+line placement, not as independent word timestamps.
 
-The model is fitted to those public versions; it is a calibration model for
-those songs, not a claim of held-out generalization. The remaining targets fall
-back to the song's synced lyric timings. The UI shows
-`WORD TIMING · USDB · N ms` for a word-level calibrated song,
-`LINE TIMING · LRCLIB · N ms` for Sunshine, and `WORD TIMING · LYRICS` otherwise.
+The word model is fitted to those public versions; it is a calibration model
+for those songs, not a claim of held-out generalization. Teacher and public-note
+maps place words directly on their note track; the old policy fallback uses the
+song's synced lyric timings. The UI shows `WORD TIMING · USDB · N ms` for a
+word-level calibrated song, `LINE TIMING · LRCLIB · N ms` for Sunshine, and
+`WORD TIMING · LYRICS` otherwise.
 
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
 **Note tracks** for the four USDB songs are rebuilt from the public UltraStar
 note lines rather than the one-song neural policy. Their note times use the
-calibrated song offset, and each pitch is placed in the octave nearest the local
-vocal track. The UI labels them `NOTES · USDB CALIBRATED`. Sunshine has no
-public note-level karaoke chart, so it still uses the neural policy and shows
-`NOTES · NEURAL POLICY`; the other 25 targets do too.
+audio-verified note offset, and each pitch is placed in the octave nearest the
+local vocal track. The UI labels them `NOTES · USDB CALIBRATED`. Sunshine and
+the other targets use the teacher + denoiser track and show
+`NOTES · TEACHER + DENOISER`. Their words are placed on those notes and their
+legato runs get explicit ribbon links.
 
 ## Grade in the UI
 
@@ -145,11 +188,11 @@ playhead, so the notes are readable instead of squeezing the whole song into one
 view.
 
 The map's placed lyric words are drawn as pills at their mapped times and
-vertical positions. The active word gets a gold underline. Times come from the
-word-timing calibration network for the four public-karaoke songs, or from the
-song's synced lyrics otherwise; the note policy supplies the vertical pitch
-placement. This is the same `placedWords` data the KaraokeMachine stage uses, so
-what you grade is what the app plays.
+vertical positions. The active word gets a gold underline. For teacher and
+public-note maps, words are placed on the generated note track; the old policy
+fallback uses the word-timing calibration network or the song's synced lyrics.
+This is the same `placedWords` data the KaraokeMachine stage uses, so what you
+grade is what the app plays.
 
 The top-right **POLICY NET** panel shows the live policy network, model step,
 last loss and the normalized weight delta after a grade. A grade pulses the
@@ -237,6 +280,9 @@ cd automap
 
 # Train the word-timing calibration against public USDB karaoke timings.
 .venv/bin/python -m automap train-words
+
+# Train the teacher-note denoiser against the hand map and public note tracks.
+.venv/bin/python -m automap train-teacher
 ```
 
 Useful UI options:
@@ -248,8 +294,10 @@ Useful UI options:
 
 ## How grading works
 
-The model is a Bernoulli policy over onset proposals plus Gaussian
-distributions for pitch, onset and duration corrections.
+The active model is the teacher-note denoiser: a Bernoulli keep policy over
+teacher notes plus Gaussian distributions for pitch, onset and duration
+corrections. The older onset-proposal policy remains the fallback and is what
+the original `note_policy.pt` checkpoint contains.
 
 - Grade 5 / `+` has reward `+1`.
 - Grade 1 / `-` has reward `-1`.
@@ -284,13 +332,15 @@ KaraokeMachine editor and submit it like any other map.
 | `automap/karaoke.py` | public USDB timing fetch, word and note targets |
 | `automap/word_model.py` | word-timing calibration network |
 | `automap/note_calibration.py` | public note-track rebuilding and octave matching |
+| `automap/teacher.py` | dense melody teacher, note denoiser and word coverage |
 | `word_metrics.json` | committed calibration metrics and sources |
 | `word_offsets.json` | committed per-song public timing offsets |
+| `teacher_metrics.json` | committed teacher-denoiser metrics |
 | `automap/queue.py` | target queue and persistent progress |
 | `automap/ui.py` | local grading server, dual-audio streaming, queue session |
 | `automap/ui_assets/` | the sidescrolling thumbs-up/down window |
-| `cache/` | extracted audio and onset features (ignored) |
-| `checkpoints/` | trained policy (ignored) |
+| `cache/` | extracted audio, onset features and teacher charts (ignored) |
+| `checkpoints/` | trained policies (ignored) |
 | `candidates/` | archived generated maps (ignored) |
 | `state/` | queue, pending candidate, playback position, feedback log (ignored) |
 
@@ -299,19 +349,19 @@ and never embeds audio in a map.
 
 ## Known limitations
 
-- With one approved training song, the model learns that song's style and cannot
-  fully generalize. The grading loop is how it adapts across the 30 targets.
-- The pitch tracker misses about 10 of the 184 approved notes; those notes are
-  excluded from the supervised selection labels.
-- Word timing and note tracks are calibrated against four public USDB karaoke
+- The teacher denoiser is trained on one hand map plus four public note tracks.
+  It generalizes the teacher's melody, but it is not a substitute for a hand
+  pass. The grading loop is still how it adapts to the remaining songs.
+- Word timing and public note tracks are calibrated against four USDB karaoke
   versions. Sunshine adds a fifth timing source, but it is **line-level only**
-  (LRCLIB), so its individual word times and note track are not calibrated
-  against a public word/note chart. The word-timing error is a fit to those
-  versions, not a held-out generalization benchmark. The other 25 targets still
-  use the one-song policy and the synced lyric timings.
-- Coverage notes are forced at timed words when the policy would otherwise leave
-  a lyric line empty. They are a safety net, not a separate learned model.
+  (LRCLIB), so its individual word times are inferred from its note/line
+  placement rather than a public word-level chart. The reported word-timing
+  error is a fit to those versions, not a held-out generalization benchmark.
+- Coverage notes are forced at timed words when the teacher/policy would
+  otherwise leave a lyric line empty. They are a safety net, not a separate
+  learned model.
 - The target songs already have draft maps on disk, but those drafts are never
-  used as training data or as generation seeds.
+  read as teacher charts, training data, or generation seeds. Teacher charts are
+  regenerated from the vocal stem.
 - The generated map is a starting point, not a replacement for submitting a
   reviewed map.

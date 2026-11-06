@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from .config import (
     FEEDBACK_PATH,
     MODEL_PATH,
+    TEACHER_MODEL_PATH,
     POLICY_GRADIENT_SCALE,
     REWARD_BY_GRADE,
     ensure_dirs,
@@ -100,6 +101,13 @@ def update_from_grade(
     pending = load_pending(song_id)
     if pending is None:
         raise FileNotFoundError(f"no pending candidate for {song_id}; run generate first")
+    pending_model = pending.get("model_path")
+    if pending_model is not None and str(pending_model[0]).strip():
+        model_path = Path(str(pending_model[0]))
+    if model_path == TEACHER_MODEL_PATH:
+        # The UI session keeps the old one-song anchor warm; teacher candidates
+        # use a different feature layout and need their own replay anchor.
+        anchor_data = None
     checkpoint = load_checkpoint(model_path)
     reward = REWARD_BY_GRADE[grade]
     baseline = checkpoint.reward_baseline if checkpoint.reward_count > 0 else 0.0
@@ -123,7 +131,12 @@ def update_from_grade(
     total_value = 0.0
     if reward != 0.0:
         if anchor_data is None:
-            anchor_data = [load_track(track) for track in load_approved_tracks()]
+            if model_path == TEACHER_MODEL_PATH:
+                from .teacher import load_teacher_anchor_data
+
+                anchor_data = load_teacher_anchor_data()
+            else:
+                anchor_data = [load_track(track) for track in load_approved_tracks()]
         model = checkpoint.model
         model.train()
         optimizer = make_optimizer(model, learning_rate)

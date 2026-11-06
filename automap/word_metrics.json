@@ -92,6 +92,7 @@
       "title": "Them Bones",
       "level": "word",
       "offset": 0.4,
+      "note_offset": 3.75,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=1597",
       "notes_url": "https://usdb.animux.de/view.php?id=1597&database1=deluxe_songs"
     },
@@ -101,6 +102,7 @@
       "title": "We Die Young",
       "level": "word",
       "offset": 0.35,
+      "note_offset": 0.2,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=24234",
       "notes_url": "https://usdb.animux.de/view.php?id=24234&database1=deluxe_songs"
     },
@@ -110,6 +112,7 @@
       "title": "No Excuses",
       "level": "word",
       "offset": -3.7,
+      "note_offset": -3.55,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=16056",
       "notes_url": "https://usdb.animux.de/view.php?id=16056&database1=deluxe_songs"
     },
@@ -119,6 +122,7 @@
       "title": "Would?",
       "level": "word",
       "offset": -0.25,
+      "note_offset": 0.15,
       "source_url": "https://usdb.animux.de/index.php?link=detail&id=63",
       "notes_url": "https://usdb.animux.de/view.php?id=63&database1=deluxe_songs"
     }

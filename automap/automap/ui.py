@@ -16,12 +16,12 @@ import numpy as np
 
 from . import note_calibration, word_model
 from .audio import load_or_extract
-from .config import MODEL_PATH, PACKAGE_DIR, WORD_MODEL_PATH
+from .config import MODEL_PATH, PACKAGE_DIR, TEACHER_MODEL_PATH, WORD_MODEL_PATH
 from .dataset import TrackData, load_track
 from .generate import generate_candidate, pending_path
 from .grade import load_pending, update_from_grade
 from .maps import Song, load_approved_tracks, load_song, write_json
-from .notes import place_words
+from .notes import build_ribbon_links, place_words, place_words_from_notes
 from .policy import load_checkpoint
 from .queue import (
     QueueState,
@@ -72,7 +72,8 @@ class Session:
         self.current_song: Song | None = None
         self.state: dict[str, Any] | None = None
         self.last_event: dict[str, Any] | None = None
-        self.network_cache: tuple[tuple[int, int], dict[str, Any]] | None = None
+        self.active_model_path: Path = MODEL_PATH
+        self.network_cache: tuple[tuple[str, int, int], dict[str, Any]] | None = None
         self._resume_or_generate()
 
     def _song(self, song_id: str) -> Song:
@@ -88,15 +89,16 @@ class Session:
                 return index
         return None
 
-    def _network_summary(self) -> dict[str, Any] | None:
-        if not MODEL_PATH.exists():
+    def _network_summary(self, model_path: Path | None = None) -> dict[str, Any] | None:
+        model_path = model_path or self.active_model_path
+        if not model_path.exists():
             return None
         try:
-            stat = MODEL_PATH.stat()
-            cache_key = (stat.st_mtime_ns, stat.st_size)
+            stat = model_path.stat()
+            cache_key = (str(model_path), stat.st_mtime_ns, stat.st_size)
             if self.network_cache is not None and self.network_cache[0] == cache_key:
                 return self.network_cache[1]
-            checkpoint = load_checkpoint(MODEL_PATH)
+            checkpoint = load_checkpoint(model_path)
             weights = checkpoint.model.state_dict()
 
             def normalize(values: list[float]) -> list[float]:
@@ -168,13 +170,30 @@ class Session:
             raise RuntimeError("no current generation target")
         path = info.get("installed") or info.get("archive")
         document = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.active_model_path = (
+            TEACHER_MODEL_PATH
+            if document.get("noteAlignment") == "teacher"
+            else MODEL_PATH
+        )
         word_alignment = word_model.alignment_for_song(song.id)
         desired_word_alignment = (
             "calibrated" if word_alignment is not None and WORD_MODEL_PATH.exists() else "lyrics"
         )
-        note_source = note_calibration.alignment_for_song(song.id)
-        needs_notes = note_source is not None and document.get("noteAlignment") != "usdb"
-        needs_words = document.get("wordAlignment") != desired_word_alignment
+        stored_note_source = document.get("noteSource")
+        public_note_source = (
+            note_calibration.alignment_for_song(song.id)
+            if document.get("noteAlignment") == "usdb"
+            else None
+        )
+        note_source = stored_note_source or public_note_source
+        # Teacher and public-note maps already place words on their note track.
+        # Do not run the old line-word migration over them. Old public maps are
+        # regenerated once so they pick up the audio-verified note offset.
+        needs_notes = note_source is not None and document.get("noteSource") is None
+        needs_words = (
+            note_source is None
+            and document.get("wordAlignment") != desired_word_alignment
+        )
         if needs_notes or needs_words:
             try:
                 audio = load_or_extract(song)
@@ -183,15 +202,22 @@ class Session:
                     if public:
                         document["notes"] = public
                         document["noteAlignment"] = "usdb"
+                        document["noteSource"] = {
+                            **(note_source or {}),
+                            "label": "USDB CALIBRATED",
+                        }
+                        document["ribbonLinks"] = build_ribbon_links(public)
+                        document["placedWords"] = place_words_from_notes(song, public)
+                        document["wordAlignment"] = "notes"
+                        needs_words = False
                     else:
                         document["noteAlignment"] = "policy"
-                    needs_words = True
                 document.setdefault("noteAlignment", "policy")
                 if needs_words:
                     document["placedWords"] = place_words(
                         song, document.get("notes") or [], audio
                     )
-                document["wordAlignment"] = desired_word_alignment
+                    document["wordAlignment"] = desired_word_alignment
                 for output in {Path(path), Path(info["archive"])}:
                     write_json(output, document)
             except Exception as error:
@@ -243,12 +269,15 @@ class Session:
             "grades_for_song": int(progress.get("graded") or 0),
             "generated_for_song": int(progress.get("generated") or 0),
             "last_event": self.last_event,
-            "network": self._network_summary(),
+            "network": self._network_summary(self.active_model_path),
             "word_alignment": word_model.alignment_for_song(song.id),
             "note_alignment": (
-                note_calibration.alignment_for_song(song.id)
-                if document.get("noteAlignment") == "usdb"
-                else None
+                document.get("noteSource")
+                or (
+                    note_calibration.alignment_for_song(song.id)
+                    if document.get("noteAlignment") == "usdb"
+                    else None
+                )
             ),
             "targets": self._targets_payload(),
             "next_title": next_target.title,

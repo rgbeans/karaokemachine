@@ -49,7 +49,7 @@ def public_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]]:
         if not text or text == "~":
             index += 1
             continue
-        start = float(note["time"]) + source.offset
+        start = float(note["time"]) + source.effective_note_offset
         duration = float(note["length"]) * beat_seconds
         pitch_class = int(note["pitch"]) % 12
         # UltraStar uses tilde notes for a held syllable.
@@ -133,6 +133,7 @@ def alignment_for_song(song_id: str) -> dict[str, Any] | None:
     return {
         "source": "USDB public UltraStar note timings",
         "usdb_id": source.usdb_id,
+        "offset": source.effective_note_offset,
         "source_url": source.source_url,
         "notes_url": source.notes_url,
     }

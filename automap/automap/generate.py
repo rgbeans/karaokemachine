@@ -10,7 +10,14 @@ import numpy as np
 
 from .audio import load_or_extract
 from .candidates import load_or_build_candidates
-from .config import CANDIDATE_DIR, MODEL_PATH, SONGS_DIR, STATE_DIR, ensure_dirs
+from .config import (
+    CANDIDATE_DIR,
+    MODEL_PATH,
+    SONGS_DIR,
+    STATE_DIR,
+    TEACHER_MODEL_PATH,
+    ensure_dirs,
+)
 from .maps import Song, flatten_words, load_song, write_json
 from .notes import build_map_document, build_notes
 from .policy import load_checkpoint, sample_actions
@@ -135,7 +142,6 @@ def generate_candidate(
     model_path: Path = MODEL_PATH,
 ) -> dict[str, object]:
     ensure_dirs()
-    checkpoint = load_checkpoint(model_path)
     if song_id is None:
         from .queue import load_targets
 
@@ -147,61 +153,104 @@ def generate_candidate(
         raise RuntimeError(
             "that song already has an approved map; generation is disabled for it"
         )
-    song = load_song(song_id)
-    audio = load_or_extract(song)
-    candidates = load_or_build_candidates(song, audio)
-    if len(candidates) == 0:
-        raise RuntimeError(f"{song.title}: no candidates were extracted from the vocal track")
-    if candidates.features.shape[1] != checkpoint.feature_mean.size:
-        raise RuntimeError("the model was trained with a different feature layout; retrain it")
-    normalized = (
-        candidates.features - checkpoint.feature_mean
-    ) / checkpoint.feature_std
-    desired_notes = max(12, int(song.duration * 0.70))
-    # Over-propose: NMS and the density cap remove overlapping notes.
-    target_candidates = max(desired_notes, int(desired_notes * 2.5))
     if seed is None:
         seed = random.SystemRandom().randrange(1, 2**63)
-    actions = sample_actions(
-        checkpoint.model,
-        normalized,
-        seed=seed,
-        target_notes=target_candidates,
-    )
-    notes = build_notes(candidates, actions, song_duration=song.duration)
+    song = load_song(song_id)
+    audio = load_or_extract(song)
 
-    # Keep early maps playable even when the policy is still conservative.
-    if len(notes) < 8:
-        order = np.argsort(-actions["select_prob"])
-        forced = np.zeros_like(actions["selected"])
-        forced[order[:24]] = 1
-        actions["selected"] = forced
-        notes = build_notes(candidates, actions, song_duration=song.duration)
-    notes = _ensure_word_coverage(song, candidates, actions, notes)
-    if len(notes) == 0:
-        raise RuntimeError("the policy produced no notes; lower the threshold or retrain")
-
-    from .config import WORD_MODEL_PATH
+    from .note_calibration import alignment_for_song as note_alignment_for_song
     from .note_calibration import public_notes
-    from .word_model import alignment_for_song
 
     calibrated_notes = public_notes(song, audio)
-    if calibrated_notes:
-        notes = calibrated_notes
-        note_alignment = "usdb"
+    teacher_result = None
+    if not calibrated_notes and model_path == MODEL_PATH:
+        from . import teacher
+
+        teacher_result = teacher.generate_teacher_notes(song, audio, seed=seed)
+
+    checkpoint = None
+    step = 0
+    if teacher_result is not None:
+        notes, candidates, actions, runtime = teacher_result
+        if len(notes) == 0:
+            raise RuntimeError("the teacher model produced no notes")
+        note_alignment = "teacher"
+        note_source = {
+            "source": "Teacher melody + denoiser",
+            "label": "TEACHER + DENOISER",
+            "model_step": 0,
+            "teacher_notes": len(teacher.load_or_build_suggestions(song)),
+        }
+        words_from_notes = True
+        word_alignment = "notes"
+        action_model_path = str(TEACHER_MODEL_PATH)
     else:
-        note_alignment = "policy"
-    word_alignment = (
-        "calibrated"
-        if alignment_for_song(song.id) is not None and WORD_MODEL_PATH.exists()
-        else "lyrics"
-    )
+        checkpoint = load_checkpoint(model_path)
+        candidates = load_or_build_candidates(song, audio)
+        if len(candidates) == 0:
+            raise RuntimeError(
+                f"{song.title}: no candidates were extracted from the vocal track"
+            )
+        if candidates.features.shape[1] != checkpoint.feature_mean.size:
+            raise RuntimeError(
+                "the model was trained with a different feature layout; retrain it"
+            )
+        normalized = (
+            candidates.features - checkpoint.feature_mean
+        ) / checkpoint.feature_std
+        desired_notes = max(12, int(song.duration * 0.70))
+        # Over-propose: NMS and the density cap remove overlapping notes.
+        target_candidates = max(desired_notes, int(desired_notes * 2.5))
+        actions = sample_actions(
+            checkpoint.model,
+            normalized,
+            seed=seed,
+            target_notes=target_candidates,
+        )
+        notes = build_notes(candidates, actions, song_duration=song.duration)
+
+        # Keep early maps playable even when the policy is still conservative.
+        if len(notes) < 8:
+            order = np.argsort(-actions["select_prob"])
+            forced = np.zeros_like(actions["selected"])
+            forced[order[:24]] = 1
+            actions["selected"] = forced
+            notes = build_notes(candidates, actions, song_duration=song.duration)
+        notes = _ensure_word_coverage(song, candidates, actions, notes)
+        if len(notes) == 0:
+            raise RuntimeError("the policy produced no notes; lower the threshold or retrain")
+        step = checkpoint.step
+        action_model_path = str(model_path)
+        if calibrated_notes:
+            notes = calibrated_notes
+            note_alignment = "usdb"
+            note_source = {
+                **(note_alignment_for_song(song.id) or {}),
+                "label": "USDB CALIBRATED",
+            }
+            words_from_notes = True
+            word_alignment = "notes"
+        else:
+            from .config import WORD_MODEL_PATH
+            from .word_model import alignment_for_song as word_alignment_for_song
+
+            note_alignment = "policy"
+            note_source = None
+            words_from_notes = False
+            word_alignment = (
+                "calibrated"
+                if word_alignment_for_song(song.id) is not None
+                and WORD_MODEL_PATH.exists()
+                else "lyrics"
+            )
     document = build_map_document(
         song,
         notes,
         audio,
         word_alignment=word_alignment,
         note_alignment=note_alignment,
+        note_source=note_source,
+        words_from_notes=words_from_notes,
     )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     archive = CANDIDATE_DIR / song.id / f"{timestamp}-{_slug(song.title)}.json"
@@ -213,7 +262,9 @@ def generate_candidate(
             "title": song.title,
             "artist": song.artist,
             "seed": seed,
-            "model_step": checkpoint.step,
+            "model_step": step,
+            "model_path": action_model_path,
+            "note_alignment": note_alignment,
             "notes": len(notes),
             "placedWords": len(document["placedWords"]),
             "duration": song.duration,
@@ -243,7 +294,9 @@ def generate_candidate(
         title=np.array([song.title]),
         archive=np.array([str(archive)]),
         installed=np.array([str(installed) if installed else ""]),
-        model_step=np.array([checkpoint.step]),
+        model_step=np.array([step]),
+        model_path=np.array([action_model_path]),
+        note_alignment=np.array([note_alignment]),
         seed=np.array([-1 if seed is None else seed]),
         note_count=np.array([len(notes)]),
     )
@@ -254,7 +307,7 @@ def generate_candidate(
         "notes": len(notes),
         "placed_words": len(document["placedWords"]),
         "mean_probability": float(np.mean(actions["select_prob"])),
-        "model_step": checkpoint.step,
+        "model_step": step,
     }
 
 

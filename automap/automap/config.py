@@ -99,3 +99,10 @@ def ensure_dirs() -> None:
 WORD_MODEL_PATH = CHECKPOINT_DIR / "word_policy.pt"
 WORD_METRICS_PATH = AUTOMAP_DIR / "word_metrics.json"
 WORD_OFFSETS_PATH = AUTOMAP_DIR / "word_offsets.json"
+
+# Teacher-guided note generation. The teacher is the app's own dense melody
+# extraction; the denoiser learns which teacher notes survive a human/public
+# note chart. It is deliberately a separate checkpoint from the live one-song
+# policy.
+TEACHER_MODEL_PATH = CHECKPOINT_DIR / "teacher_policy.pt"
+SUGGESTION_CACHE = CACHE_DIR / "suggestions"

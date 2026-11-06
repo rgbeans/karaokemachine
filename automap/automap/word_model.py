@@ -361,6 +361,7 @@ def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
             "title": source.title,
             "level": source.level,
             "offset": source.offset,
+            "note_offset": source.effective_note_offset,
             "source_url": source.source_url,
             "notes_url": source.notes_url,
         }
@@ -401,6 +402,7 @@ def train_word_model(epochs: int = 2000, seed: int = 2) -> dict[str, Any]:
             "title": source.title,
             "level": source.level,
             "offset": source.offset,
+            "note_offset": source.effective_note_offset,
             "source_url": source.source_url,
             "notes_url": source.notes_url,
         }

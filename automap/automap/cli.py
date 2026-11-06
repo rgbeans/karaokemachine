@@ -15,6 +15,7 @@ from .queue import load_targets
 from .train import train
 from .ui import run_ui
 from .word_model import train_word_model
+from .teacher import train_teacher_model
 
 
 def _approved_ids() -> set[str]:
@@ -85,6 +86,10 @@ def command_train(args: argparse.Namespace) -> None:
 
 def command_train_words(args: argparse.Namespace) -> None:
     train_word_model(epochs=args.epochs, seed=args.seed)
+
+
+def command_train_teacher(args: argparse.Namespace) -> None:
+    train_teacher_model(epochs=args.epochs, seed=args.seed)
 
 
 def command_generate(args: argparse.Namespace) -> None:
@@ -186,6 +191,14 @@ def build_parser() -> argparse.ArgumentParser:
     word_parser.add_argument("--epochs", type=int, default=2000)
     word_parser.add_argument("--seed", type=int, default=2)
     word_parser.set_defaults(func=command_train_words)
+
+    teacher_parser = sub.add_parser(
+        "train-teacher",
+        help="train the teacher-note denoiser against finished/public note tracks",
+    )
+    teacher_parser.add_argument("--epochs", type=int, default=300)
+    teacher_parser.add_argument("--seed", type=int, default=4)
+    teacher_parser.set_defaults(func=command_train_teacher)
 
     generate_parser = sub.add_parser("generate", help="generate one draft candidate")
     generate_parser.add_argument("--song", help="song id; defaults to the first approved track")

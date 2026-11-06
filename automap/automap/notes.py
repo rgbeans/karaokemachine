@@ -190,13 +190,94 @@ def place_words(
     return placed
 
 
+def place_words_from_notes(
+    song: Song,
+    notes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach lyric words to the generated note track.
+
+    Line-level word calibration is a useful prior, but once a real note track
+    exists the words should sit on the notes that carry them. Notes are assigned
+    to lyric lines by midpoint boundaries, then words are distributed across
+    the notes of each line. Lines with no notes fall back to their local word
+    timings so the lyrics never disappear.
+    """
+    if not notes:
+        return place_words(song, notes)
+    midis = [int(note["midi"]) for note in notes]
+    low, high = min(midis), max(midis)
+    span = max(12, high - low)
+    center = (low + high) / 2.0
+    starts = [float(line.get("start", 0.0)) for line in song.lines]
+    line_notes: list[list[dict[str, Any]]] = [[] for _ in song.lines]
+    if starts:
+        for note in notes:
+            note_start = float(note["start"])
+            position = int(np.searchsorted(starts, note_start, side="right") - 1)
+            if position < 0:
+                position = 0
+            line_end = float(song.lines[position].get("end", starts[position]))
+            # Notes in a long instrumental gap belong to no lyric line.
+            if note_start > line_end + 0.5:
+                continue
+            line_notes[position].append(note)
+
+    placed: list[dict[str, Any]] = []
+    for line_index, line in enumerate(song.lines):
+        words = list(line.get("words") or [])
+        if not words:
+            continue
+        candidates = sorted(
+            line_notes[line_index], key=lambda item: (item["start"], item["midi"])
+        )
+        for word_index, word in enumerate(words):
+            local_time = float(word.get("start", line.get("start", 0.0)))
+            if not candidates:
+                placed.append(
+                    {
+                        "text": str(word.get("text") or ""),
+                        "start": round(local_time, 3),
+                        "y": 0.5,
+                        "line": line_index,
+                        "wordIndex": word_index,
+                    }
+                )
+                continue
+            if len(candidates) == 1:
+                note = candidates[0]
+            elif len(candidates) >= len(words):
+                position = round(word_index * (len(candidates) - 1) / max(1, len(words) - 1))
+                note = candidates[int(position)]
+            else:
+                position = int(word_index * len(candidates) / max(1, len(words)))
+                note = candidates[min(len(candidates) - 1, position)]
+            y = 0.5 - (float(note["midi"]) - center) / span * 0.42
+            placed.append(
+                {
+                    "text": str(word.get("text") or ""),
+                    "start": round(float(note["start"]), 3),
+                    "y": round(float(np.clip(y, 0.12, 0.88)), 4),
+                    "line": line_index,
+                    "wordIndex": word_index,
+                }
+            )
+    return placed
+
+
 def build_ribbon_links(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Connect adjacent notes that belong to the same sung run.
+
+    Once a map has any explicit link, the stage stops drawing implicit
+    word/line ribbons. The old builder only linked a handful of very tight
+    gaps, which made otherwise continuous phrases look disconnected. Link every
+    adjacent pair that is close enough to be a legato run.
+    """
     links: list[dict[str, Any]] = []
     for index in range(len(notes) - 1):
         current = notes[index]
         following = notes[index + 1]
         gap = float(following["start"]) - (float(current["start"]) + float(current["dur"]))
-        if -0.02 <= gap <= 0.12 and abs(int(following["midi"]) - int(current["midi"])) <= 12:
+        if gap <= 0.40 and abs(int(following["midi"]) - int(current["midi"])) <= 12:
             links.append(
                 {
                     "from": index,
@@ -214,17 +295,24 @@ def build_map_document(
     audio: dict[str, Any] | None = None,
     word_alignment: str = "lyrics",
     note_alignment: str = "policy",
+    note_source: dict[str, Any] | None = None,
+    words_from_notes: bool = False,
 ) -> dict[str, Any]:
     midis = [int(note["midi"]) for note in notes]
     low = max(0, min(midis) - 2) if midis else 48
     high = min(127, max(midis) + 2) if midis else 72
-    return {
+    placed_words = (
+        place_words_from_notes(song, notes)
+        if words_from_notes
+        else place_words(song, notes, audio)
+    )
+    document: dict[str, Any] = {
         "format": "karaokemachine-level",
         "version": 1,
         "draft": True,
         "notes": notes,
         "lines": song.lines,
-        "placedWords": place_words(song, notes, audio),
+        "placedWords": placed_words,
         "customWords": [],
         "ribbonLinks": build_ribbon_links(notes),
         "wordAlignment": word_alignment,
@@ -232,3 +320,6 @@ def build_map_document(
         "low": low,
         "high": high,
     }
+    if note_source is not None:
+        document["noteSource"] = note_source
+    return document

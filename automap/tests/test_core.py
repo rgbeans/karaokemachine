@@ -9,7 +9,12 @@ from automap.config import FEATURE_COUNT
 from automap.grade import parse_grade
 from automap.maps import Song
 from automap.model import NotePolicy
-from automap.notes import build_map_document, match_note_sets
+from automap.notes import (
+    build_map_document,
+    build_ribbon_links,
+    match_note_sets,
+    place_words_from_notes,
+)
 from automap.policy import calibrate_selection_bias
 
 
@@ -149,6 +154,57 @@ class CoreTests(unittest.TestCase):
             alignment = note_calibration.alignment_for_song(source.song_id)
             self.assertIsNotNone(alignment)
             self.assertEqual(alignment["usdb_id"], source.usdb_id)
+            self.assertEqual(alignment["offset"], source.effective_note_offset)
+        them_bones = karaoke.BY_SONG["yt-zTuD8k3JvxQ"]
+        self.assertEqual(them_bones.effective_note_offset, 3.75)
+
+    def test_ribbon_links_cover_legato_notes(self) -> None:
+        notes = [
+            {"start": 1.0, "dur": 0.5, "midi": 60},
+            {"start": 1.7, "dur": 0.5, "midi": 62},
+            {"start": 3.0, "dur": 0.5, "midi": 64},
+        ]
+        links = build_ribbon_links(notes)
+        self.assertEqual(links, [{"from": 0, "to": 1, "fromSide": "right", "toSide": "left"}])
+
+    def test_words_follow_the_note_track(self) -> None:
+        song = Song(
+            id="word-notes",
+            title="Word Notes",
+            artist="Tester",
+            album="Tests",
+            duration=4.0,
+            guide_path=__import__("pathlib").Path("/tmp/none"),
+            backing_path=None,
+            lines=[
+                {
+                    "start": 0.8,
+                    "end": 3.5,
+                    "text": "hello world",
+                    "words": [
+                        {"text": "hello", "start": 1.0, "end": 1.8},
+                        {"text": "world", "start": 2.0, "end": 2.8},
+                    ],
+                }
+            ],
+            raw={},
+        )
+        notes = [
+            {"start": 1.1, "dur": 0.5, "midi": 60},
+            {"start": 2.2, "dur": 0.5, "midi": 62},
+        ]
+        placed = place_words_from_notes(song, notes)
+        self.assertEqual([item["start"] for item in placed], [1.1, 2.2])
+
+    def test_teacher_metrics_improve_on_the_teacher_chart(self) -> None:
+        import json
+
+        from automap.teacher import TEACHER_METRICS_PATH
+
+        metrics = json.loads(TEACHER_METRICS_PATH.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(metrics["songs"]), 5)
+        for item in metrics["songs"].values():
+            self.assertGreater(item["f1"], item["teacher_f1"])
 
     def test_word_features_match_the_model_contract(self) -> None:
         from automap import karaoke, word_model
