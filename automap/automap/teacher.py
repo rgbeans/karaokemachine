@@ -72,6 +72,26 @@ TEACHER_FEATURE_NAMES = (
     "song_duration",
     "is_first",
     "is_last",
+    "raw_pitch_start_delta",
+    "raw_pitch_q1_delta",
+    "raw_pitch_mid_delta",
+    "raw_pitch_q3_delta",
+    "raw_pitch_end_delta",
+    "raw_pitch_range",
+    "raw_pitch_jump_before",
+    "raw_pitch_jump_after",
+    "raw_rms_start",
+    "raw_rms_mid",
+    "raw_rms_end",
+    "raw_flux_start",
+    "raw_flux_mid",
+    "raw_flux_end",
+    "raw_voiced_start",
+    "raw_voiced_mid",
+    "raw_voiced_end",
+    "raw_confidence_start",
+    "raw_confidence_mid",
+    "raw_confidence_end",
 )
 TEACHER_FEATURE_COUNT = len(TEACHER_FEATURE_NAMES)
 
@@ -184,6 +204,32 @@ def _teacher_features(
     rms = np.asarray(audio["rms"], dtype=np.float32)
     flux = np.asarray(audio["flux"], dtype=np.float32)
     voiced = np.asarray(audio["voiced"], dtype=bool)
+    confidence = np.asarray(audio.get("confidence", np.zeros_like(rms)), dtype=np.float32)
+
+    def sample(track: np.ndarray, time: float) -> float:
+        position = int(round(time * fps))
+        low = max(0, position - 1)
+        high = min(track.size, position + 2)
+        if high <= low:
+            return 0.0
+        window = track[low:high]
+        if track is midi_track:
+            finite_window = window[np.isfinite(window)]
+            return float(np.median(finite_window)) if finite_window.size else midi
+        if track is voiced:
+            return float(np.mean(window))
+        return float(np.mean(window))
+
+    note_end = start + duration
+    pitch_start = sample(midi_track, start)
+    pitch_q1 = sample(midi_track, start + duration * 0.25)
+    pitch_mid = sample(midi_track, start + duration * 0.5)
+    pitch_q3 = sample(midi_track, start + duration * 0.75)
+    pitch_end = sample(midi_track, note_end)
+    pitch_values = [pitch_start, pitch_q1, pitch_mid, pitch_q3, pitch_end]
+    raw_pitch_range = max(pitch_values) - min(pitch_values)
+    pitch_before = sample(midi_track, start - 0.10)
+    pitch_after = sample(midi_track, note_end + 0.10)
 
     first = max(0, int(np.floor(start * fps)))
     last = min(midi_track.size, int(np.ceil((start + duration) * fps)) + 1)
@@ -272,6 +318,26 @@ def _teacher_features(
         song.duration / 400.0,
         1.0 if index == 0 else 0.0,
         1.0 if index + 1 == len(notes) else 0.0,
+        (pitch_start - midi) / 12.0,
+        (pitch_q1 - midi) / 12.0,
+        (pitch_mid - midi) / 12.0,
+        (pitch_q3 - midi) / 12.0,
+        (pitch_end - midi) / 12.0,
+        raw_pitch_range / 12.0,
+        (pitch_before - pitch_start) / 12.0,
+        (pitch_after - pitch_end) / 12.0,
+        sample(rms, start),
+        sample(rms, start + duration * 0.5),
+        sample(rms, note_end),
+        min(4.0, sample(flux, start)),
+        min(4.0, sample(flux, start + duration * 0.5)),
+        min(4.0, sample(flux, note_end)),
+        sample(voiced, start),
+        sample(voiced, start + duration * 0.5),
+        sample(voiced, note_end),
+        sample(confidence, start),
+        sample(confidence, start + duration * 0.5),
+        sample(confidence, note_end),
     ]
 
 
@@ -450,8 +516,8 @@ def select_teacher_actions(
                 if runtime.pitch_correction
                 else np.zeros(len(candidates), dtype=np.float32)
             ),
-            "onset_offset": output["onset_offset"][0].cpu().numpy().astype(np.float32),
-            "log_scale": output["log_scale"][0].cpu().numpy().astype(np.float32),
+            "onset_offset": np.zeros(len(candidates), dtype=np.float32),
+            "log_scale": np.zeros(len(candidates), dtype=np.float32),
         }
 
 
@@ -766,7 +832,7 @@ def generate_teacher_notes(
     # Some songs contain long melismatic phrases that the denoiser collapses
     # too aggressively. Keep the dense teacher chart when the selected track is
     # much sparser than the song's vocal activity.
-    if len(notes) < song.duration * 0.50 and len(suggestions) > len(notes) * 1.5:
+    if len(notes) < song.duration * 0.80 and len(suggestions) > len(notes) * 1.5:
         notes = [
             {
                 "start": round(float(note["start"]), 3),

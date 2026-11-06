@@ -122,20 +122,20 @@ Two checkpoints are used:
 - `checkpoints/teacher_policy_aic.pt` — AIC-specialized model, used for
   Alice in Chains songs without a public note track.
 
-The broad model scores mean F1 **0.498**, median **0.553** across the 21 matched
-note charts. Examples: My Sacrifice 0.694, Man in the Box 0.641, Hotel
-California 0.631, Careless Whisper 0.630, Black 0.623.
+The raw-feature broad model scores mean F1 **0.516**, median **0.545** across the
+21 matched note charts. Examples: Quit Playing Games 0.726, I Want It That Way
+0.697, Careless Whisper 0.679, My Sacrifice 0.664, One Last Breath 0.632.
 
 AIC specialist (pitch correction disabled):
 
 | Reference chart | Teacher notes | Generated notes | Note F1 | Raw teacher F1 |
 | --- | ---: | ---: | ---: | ---: |
-| Man in the Box | 514 | 154 | **0.734** | 0.375 |
-| Them Bones | 326 | 80 | **0.392** | 0.204 |
-| We Die Young | 304 | 85 | **0.625** | 0.333 |
-| No Excuses | 370 | 129 | **0.356** | 0.240 |
-| Would? | 371 | 121 | **0.492** | 0.336 |
-| Nutshell | 339 | 104 | **0.463** | 0.235 |
+| Man in the Box | 514 | 257 | **0.599** | 0.375 |
+| Them Bones | 326 | 138 | **0.351** | 0.204 |
+| We Die Young | 304 | 138 | **0.544** | 0.333 |
+| No Excuses | 370 | 228 | **0.363** | 0.240 |
+| Would? | 371 | 187 | **0.545** | 0.336 |
+| Nutshell | 339 | 231 | **0.315** | 0.235 |
 
 For the 40 non-USDB local songs that produce notes (Whale & Wasp is
 instrumental), the teacher path produces a median 216 notes and 37 ribbons;
@@ -144,6 +144,13 @@ median exact-pitch agreement with the local vocal is 60.8%, within one semitone
 check, not a hand-map ground truth benchmark; those songs still need grading.
 
 ![Generated Man in the Box vs the hand map](docs/mitb-comparison.png)
+
+The denoiser now consumes raw pitch samples at the note start, quarter, middle,
+three-quarter and end points, plus raw RMS, spectral flux, voicing and pitch
+confidence windows. Teacher inference no longer applies pitch, onset or
+duration corrections; it keeps the raw teacher timing and pitch. If the
+denoised track is much sparser than the raw teacher, the dense teacher chart is
+kept instead.
 
 The public note tracks now use a **separate audio-verified note offset**, not
 the lyric-word offset. This fixes the large intro mismatch on Them Bones

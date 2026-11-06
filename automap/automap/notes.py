@@ -261,17 +261,47 @@ def _distribute_by_weights(
         return result
     weights = [max(2, len(str(word.get("text") or "").strip()) + 1) for word in words]
     total = sum(weights)
-    counts = [max(1, int(round(len(ordered) * weight / total))) for weight in weights]
-    while sum(counts) > len(ordered):
-        index = max(range(len(counts)), key=lambda item: counts[item])
-        counts[index] -= 1
-    while sum(counts) < len(ordered):
-        counts[-1] += 1
-    result = []
-    cursor = 0
-    for count in counts:
-        result.append(ordered[cursor : cursor + count])
-        cursor += count
+    phrase_start = float(ordered[0]["start"])
+    phrase_end = max(float(note["start"]) + float(note["dur"]) for note in ordered)
+    phrase_span = max(0.1, phrase_end - phrase_start)
+    boundaries = [phrase_start]
+    cursor = phrase_start
+    for weight in weights[:-1]:
+        cursor += phrase_span * weight / total
+        boundaries.append(cursor)
+    boundaries.append(phrase_end + 0.001)
+    result: list[list[dict[str, Any]]] = [[] for _ in words]
+    for note in ordered:
+        position = int(np.searchsorted(boundaries, float(note["start"]), side="right") - 1)
+        position = max(0, min(len(words) - 1, position))
+        result[position].append(note)
+    # A short/quiet word with no note in its time slot borrows a note from a
+    # neighbouring word. Never leave a word empty: that would trigger the
+    # whole-line fallback and destroy a valid held-word assignment.
+    for index, group in enumerate(result):
+        if group:
+            continue
+        donor = next(
+            (
+                other
+                for other in range(index - 1, -1, -1)
+                if len(result[other]) > 1
+            ),
+            None,
+        )
+        if donor is not None:
+            result[index].append(result[donor].pop())
+            continue
+        donor = next(
+            (
+                other
+                for other in range(index + 1, len(result))
+                if len(result[other]) > 1
+            ),
+            None,
+        )
+        if donor is not None:
+            result[index].append(result[donor].pop(0))
     return result
 
 
@@ -370,7 +400,7 @@ def assign_word_runs(
         else:
             assignments = _distribute_by_weights(candidates, words)
 
-        if any(not assignment for assignment in assignments):
+        if all(not assignment for assignment in assignments):
             assignments = _distribute_by_weights(candidates, words)
 
         for word_index, word in enumerate(words):
