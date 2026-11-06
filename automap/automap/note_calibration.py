@@ -30,7 +30,7 @@ def _pitch_median(audio: dict[str, Any], start: float, end: float) -> float | No
 
 
 def public_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]]:
-    source = karaoke.BY_SONG.get(song.id)
+    source = karaoke.NOTE_BY_SONG.get(song.id)
     if source is None:
         return []
     try:
@@ -127,7 +127,7 @@ def public_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def alignment_for_song(song_id: str) -> dict[str, Any] | None:
-    source = karaoke.BY_SONG.get(song_id)
+    source = karaoke.NOTE_BY_SONG.get(song_id)
     if source is None:
         return None
     return {

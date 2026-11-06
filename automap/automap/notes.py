@@ -214,8 +214,10 @@ def place_words_from_notes(
         for note in notes:
             note_start = float(note["start"])
             position = int(np.searchsorted(starts, note_start, side="right") - 1)
+            # Notes before the first lyric line are intro/vocalisation material
+            # and must not grab the first line's words.
             if position < 0:
-                position = 0
+                continue
             line_end = float(song.lines[position].get("end", starts[position]))
             # Notes in a long instrumental gap belong to no lyric line.
             if note_start > line_end + 0.5:

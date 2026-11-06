@@ -174,13 +174,16 @@ class CoreTests(unittest.TestCase):
     def test_public_note_calibration_sources(self) -> None:
         from automap import karaoke, note_calibration
 
-        for source in karaoke.SOURCES:
+        for source in (*karaoke.SOURCES, *karaoke.NOTE_SOURCES):
             alignment = note_calibration.alignment_for_song(source.song_id)
             self.assertIsNotNone(alignment)
             self.assertEqual(alignment["usdb_id"], source.usdb_id)
             self.assertEqual(alignment["offset"], source.effective_note_offset)
         them_bones = karaoke.BY_SONG["yt-zTuD8k3JvxQ"]
         self.assertEqual(them_bones.effective_note_offset, 3.75)
+        self.assertEqual(
+            karaoke.NOTE_BY_SONG["yt-G23iLGhh9lo"].effective_note_offset, -0.15
+        )
 
     def test_ribbon_links_cover_legato_notes(self) -> None:
         notes = [

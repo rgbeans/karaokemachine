@@ -86,6 +86,15 @@ SOURCES: tuple[KaraokeSource, ...] = (
 BY_SONG = {source.song_id: source for source in SOURCES}
 BY_INDEX = {index: source for index, source in enumerate(SOURCES)}
 
+# Public note tracks that are useful for teacher supervision even when we have
+# not calibrated their lyric-word timing yet.
+NOTE_SOURCES: tuple[KaraokeSource, ...] = (
+    KaraokeSource("yt-G23iLGhh9lo", 17638, "Nutshell", 0.0, -0.15),
+)
+NOTE_BY_SONG = {
+    source.song_id: source for source in (*SOURCES, *NOTE_SOURCES)
+}
+
 # Songs with only public line timings. The local lyric lines for Sunshine were
 # imported from LRCLIB 819361 and shifted by 0.29 s to match the local audio.
 LINE_SOURCES: tuple[LineSource, ...] = (

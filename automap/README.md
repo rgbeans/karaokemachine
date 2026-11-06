@@ -102,18 +102,21 @@ cd automap
 ```
 
 Training pairs the teacher chart with the hand-mapped **Man in the Box** chart
-and the four public USDB note tracks. The denoiser learns which teacher notes a
+and five public USDB note tracks. The denoiser learns which teacher notes a
 human/public chart keeps, plus small pitch, onset and duration corrections. It
 is saved as `checkpoints/teacher_policy.pt`; the old one-song checkpoint is not
 overwritten.
 
 | Reference chart | Teacher notes | Generated notes | Note F1 | Raw teacher F1 |
 | --- | ---: | ---: | ---: | ---: |
-| Man in the Box | 514 | 150 | **0.760** | 0.375 |
-| Them Bones | 326 | 83 | **0.444** | 0.204 |
-| We Die Young | 304 | 87 | **0.657** | 0.333 |
-| No Excuses | 370 | 116 | **0.453** | 0.240 |
-| Would? | 371 | 127 | **0.620** | 0.336 |
+| Man in the Box | 514 | 154 | **0.769** | 0.375 |
+| Them Bones | 326 | 80 | **0.451** | 0.204 |
+| We Die Young | 304 | 85 | **0.654** | 0.333 |
+| No Excuses | 370 | 129 | **0.427** | 0.240 |
+| Would? | 371 | 121 | **0.599** | 0.336 |
+| Nutshell | 339 | 104 | **0.495** | 0.235 |
+
+![Generated Man in the Box vs the hand map](docs/mitb-comparison.png)
 
 The public note tracks now use a **separate audio-verified note offset**, not
 the lyric-word offset. This fixes the large intro mismatch on Them Bones
@@ -163,13 +166,13 @@ word-level calibrated song, `LINE TIMING · LRCLIB · N ms` for Sunshine, and
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
-**Note tracks** for the four USDB songs are rebuilt from the public UltraStar
-note lines rather than the one-song neural policy. Their note times use the
-audio-verified note offset, and each pitch is placed in the octave nearest the
-local vocal track. The UI labels them `NOTES · USDB CALIBRATED`. Sunshine and
-the other targets use the teacher + denoiser track and show
-`NOTES · TEACHER + DENOISER`. Their words are placed on those notes and their
-legato runs get explicit ribbon links.
+**Note tracks** for five USDB songs — the four word-calibrated songs plus
+**Nutshell** — are rebuilt from the public UltraStar note lines rather than the
+one-song neural policy. Their note times use the audio-verified note offset, and
+each pitch is placed in the octave nearest the local vocal track. The UI labels
+them `NOTES · USDB CALIBRATED`. Sunshine and the other targets use the teacher +
+denoiser track and show `NOTES · TEACHER + DENOISER`. Their words are placed on
+those notes and their legato runs get explicit ribbon links.
 
 ## Grade in the UI
 
@@ -354,7 +357,7 @@ and never embeds audio in a map.
 
 ## Known limitations
 
-- The teacher denoiser is trained on one hand map plus four public note tracks.
+- The teacher denoiser is trained on one hand map plus five public note tracks.
   It generalizes the teacher's melody, but it is not a substitute for a hand
   pass. The grading loop is still how it adapts to the remaining songs.
 - Word timing and public note tracks are calibrated against four USDB karaoke

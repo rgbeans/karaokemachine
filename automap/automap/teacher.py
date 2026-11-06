@@ -321,15 +321,17 @@ def _reference_notes(song: Song, audio: dict[str, Any]) -> list[dict[str, Any]] 
     return None
 
 
-def teacher_training_songs() -> list[Song]:
+def teacher_training_songs(exclude_song_ids: tuple[str, ...] = ()) -> list[Song]:
     songs: list[Song] = []
     for track in load_approved_tracks():
         songs.append(load_song(track.song_id))
-    for source in karaoke.SOURCES:
+    for source in (*karaoke.SOURCES, *karaoke.NOTE_SOURCES):
         songs.append(load_song(source.song_id))
     seen = set()
     unique: list[Song] = []
     for song in songs:
+        if song.id in exclude_song_ids:
+            continue
         if song.id not in seen:
             seen.add(song.id)
             unique.append(song)
@@ -442,7 +444,15 @@ def select_teacher_actions(
         }
 
 
-def train_teacher_model(epochs: int = 300, seed: int = 4) -> dict[str, Any]:
+def train_teacher_model(
+    epochs: int = 300,
+    seed: int = 4,
+    output_path: Path | None = None,
+    metrics_path: Path | None = None,
+    exclude_song_ids: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    output_path = output_path or TEACHER_MODEL_PATH
+    metrics_path = metrics_path or TEACHER_METRICS_PATH
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     features_parts: list[np.ndarray] = []
@@ -451,7 +461,7 @@ def train_teacher_model(epochs: int = 300, seed: int = 4) -> dict[str, Any]:
     onset_parts: list[np.ndarray] = []
     scale_parts: list[np.ndarray] = []
     per_song: dict[str, dict[str, Any]] = {}
-    for song in teacher_training_songs():
+    for song in teacher_training_songs(exclude_song_ids):
         audio = load_or_extract(song)
         suggestions = load_or_build_suggestions(song)
         candidates = build_teacher_candidates(song, audio, suggestions)
@@ -581,7 +591,7 @@ def train_teacher_model(epochs: int = 300, seed: int = 4) -> dict[str, Any]:
             f"F1 {f1:.3f} (teacher {raw_f1:.3f})"
         )
 
-    TEACHER_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "version": 1,
@@ -593,20 +603,22 @@ def train_teacher_model(epochs: int = 300, seed: int = 4) -> dict[str, Any]:
             "metrics": metrics,
             "step": 0,
         },
-        TEACHER_MODEL_PATH,
+        output_path,
     )
-    TEACHER_METRICS_PATH.write_text(
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"saved {TEACHER_MODEL_PATH}")
+    print(f"saved {output_path}")
     return metrics
 
 
-def load_teacher_model() -> TeacherRuntime | None:
-    if not TEACHER_MODEL_PATH.exists():
+def load_teacher_model(model_path: Path | None = None) -> TeacherRuntime | None:
+    model_path = model_path or TEACHER_MODEL_PATH
+    if not model_path.exists():
         return None
     try:
-        payload = torch.load(TEACHER_MODEL_PATH, map_location="cpu", weights_only=False)
+        payload = torch.load(model_path, map_location="cpu", weights_only=False)
         mean = np.asarray(payload["feature_mean"], dtype=np.float32)
         names = payload.get("feature_names")
         if names is not None and list(names) != list(TEACHER_FEATURE_NAMES):
@@ -713,8 +725,9 @@ def generate_teacher_notes(
     song: Song,
     audio: dict[str, Any],
     seed: int | None = None,
+    model_path: Path | None = None,
 ) -> tuple[list[dict[str, Any]], CandidateSet, dict[str, np.ndarray], TeacherRuntime] | None:
-    runtime = load_teacher_model()
+    runtime = load_teacher_model(model_path)
     if runtime is None:
         return None
     suggestions = load_or_build_suggestions(song)
