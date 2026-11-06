@@ -208,8 +208,14 @@ def _phrase_groups(notes: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 def _compress_group(
     group: list[dict[str, Any]],
     count: int,
+    variant_seed: int = 0,
 ) -> list[dict[str, Any]]:
-    """Turn a long held phrase into a small ribbon run of equal-timed notes."""
+    """Turn a long held phrase into a small ribbon run of notes.
+
+    The internal boundaries are jittered by a generation seed so a BAD retry
+    can actually produce a different held-note realization instead of the same
+    four pitches every time.
+    """
     if not group or count <= 0:
         return []
     if len(group) <= count:
@@ -217,18 +223,30 @@ def _compress_group(
     start = min(float(note["start"]) for note in group)
     end = max(float(note["start"]) + float(note["dur"]) for note in group)
     span = max(0.1, end - start)
+    rng = np.random.default_rng(variant_seed)
+    positions = [0.0, 1.0]
+    for index in range(1, count):
+        base = index / count
+        positions.append(float(np.clip(base + rng.uniform(-0.10, 0.10), 0.04, 0.96)))
+    positions = sorted(positions)
+    held_pitch = int(round(float(np.median([int(note["midi"]) for note in group]))))
     result: list[dict[str, Any]] = []
     for index in range(count):
-        segment_start = start + span * index / count
-        segment_end = start + span * (index + 1) / count
-        pitches = [
+        segment_start = start + span * positions[index]
+        segment_end = start + span * positions[index + 1]
+        segment_pitches = [
             int(note["midi"])
             for note in group
             if segment_start - 1e-6 <= float(note["start"]) < segment_end
         ]
-        if not pitches:
-            pitches = [int(group[min(len(group) - 1, index * len(group) // count)]["midi"])]
-        midi = int(round(float(np.median(pitches))))
+        segment_pitch = (
+            int(round(float(np.median(segment_pitches))))
+            if segment_pitches
+            else held_pitch
+        )
+        # Held syllables may move slightly with vibrato, but must not leap an
+        # octave because of tracker noise.
+        midi = int(np.clip(segment_pitch, held_pitch - 1, held_pitch + 1))
         result.append(
             {
                 "start": round(segment_start, 3),
@@ -308,6 +326,7 @@ def _distribute_by_weights(
 def assign_word_runs(
     song: Song,
     notes: list[dict[str, Any]],
+    variant_seed: int = 0,
 ) -> list[dict[str, Any]]:
     """Assign notes to words by actual sung phrases, not equal word spacing.
 
@@ -373,7 +392,7 @@ def assign_word_runs(
             and len(first_group) >= 4
         )
         if held_first:
-            compressed = _compress_group(first_group, 4)
+            compressed = _compress_group(first_group, 4, variant_seed)
             assignments[0] = compressed
             first_ids = {id(note) for note in first_group}
             notes[:] = [note for note in notes if id(note) not in first_ids]
@@ -558,12 +577,13 @@ def build_map_document(
     note_alignment: str = "policy",
     note_source: dict[str, Any] | None = None,
     words_from_notes: bool = False,
+    variant_seed: int = 0,
 ) -> dict[str, Any]:
     midis = [int(note["midi"]) for note in notes]
     low = max(0, min(midis) - 2) if midis else 48
     high = min(127, max(midis) + 2) if midis else 72
     placed_words = (
-        assign_word_runs(song, notes)
+        assign_word_runs(song, notes, variant_seed)
         if words_from_notes
         else place_words(song, notes, audio)
     )

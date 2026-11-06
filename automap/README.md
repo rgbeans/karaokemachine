@@ -259,6 +259,10 @@ bar to jump anywhere in the song.
 - Green **GOOD** thumbs-up gives reward `+1` and advances to the next song.
 - **NEXT** skips the current candidate and moves to the next song without
   updating the model.
+- **BAD** updates the checkpoint that actually generated the current map (AIC
+  specialist or broad USDB model), then retries the song with a new held-note
+  realization. A single BAD now changes the “We” run; it no longer reuses the
+  same frozen notes.
 - **REGENERATE** discards the current candidate and rebuilds this song with the
   active generator. Use it when an old candidate is still lingering from before
   the teacher pipeline was installed. The old archive is kept; the queue position

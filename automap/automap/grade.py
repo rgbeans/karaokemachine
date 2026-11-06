@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from .config import (
     FEEDBACK_PATH,
     MODEL_PATH,
+    TEACHER_AIC_MODEL_PATH,
     TEACHER_MODEL_PATH,
     POLICY_GRADIENT_SCALE,
     REWARD_BY_GRADE,
@@ -104,7 +105,7 @@ def update_from_grade(
     pending_model = pending.get("model_path")
     if pending_model is not None and str(pending_model[0]).strip():
         model_path = Path(str(pending_model[0]))
-    if model_path == TEACHER_MODEL_PATH:
+    if model_path in {TEACHER_MODEL_PATH, TEACHER_AIC_MODEL_PATH}:
         # The UI session keeps the old one-song anchor warm; teacher candidates
         # use a different feature layout and need their own replay anchor.
         anchor_data = None
@@ -135,7 +136,7 @@ def update_from_grade(
     total_value = 0.0
     if reward != 0.0:
         if anchor_data is None:
-            if model_path == TEACHER_MODEL_PATH:
+            if model_path in {TEACHER_MODEL_PATH, TEACHER_AIC_MODEL_PATH}:
                 from .teacher import load_teacher_anchor_data
 
                 anchor_data = load_teacher_anchor_data()

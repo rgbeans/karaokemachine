@@ -184,7 +184,7 @@ def generate_candidate(
         }
         words_from_notes = True
         word_alignment = "notes"
-        action_model_path = str(TEACHER_MODEL_PATH)
+        action_model_path = str(teacher.teacher_model_path_for_song(song))
     else:
         checkpoint = load_checkpoint(model_path)
         candidates = load_or_build_candidates(song, audio)
@@ -252,6 +252,7 @@ def generate_candidate(
         note_alignment=note_alignment,
         note_source=note_source,
         words_from_notes=words_from_notes,
+        variant_seed=int(seed or 0),
     )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     archive = CANDIDATE_DIR / song.id / f"{timestamp}-{_slug(song.title)}.json"
