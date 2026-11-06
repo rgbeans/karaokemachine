@@ -425,6 +425,18 @@ def build_ribbon_links(
                         "toSide": "left",
                     }
                 )
+    if any(note.get("word") is not None for note in notes):
+        # Never bridge two lyric words with one ribbon. Word runs are allowed
+        # to be long; separate words must remain visually separate.
+        links = [
+            link
+            for link in links
+            if notes[link["from"]].get("word") is not None
+            and notes[link["to"]].get("word") is not None
+            and notes[link["from"]].get("word") == notes[link["to"]].get("word")
+            and notes[link["from"]].get("line") == notes[link["to"]].get("line")
+            and notes[link["from"]].get("wordIndex") == notes[link["to"]].get("wordIndex")
+        ]
     links.sort(key=lambda link: (link["from"], link["to"]))
     return links
 

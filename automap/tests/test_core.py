@@ -233,6 +233,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(placed[0]["text"], "We")
         self.assertEqual(sum(1 for note in notes if note.get("word") == "We"), 4)
         self.assertEqual(placed[1]["text"], "chase")
+        links = build_ribbon_links(notes, song)
+        self.assertTrue(any(link["from"] == 0 and link["to"] == 1 for link in links))
+        for link in links:
+            self.assertEqual(notes[link["from"]].get("word"), notes[link["to"]].get("word"))
 
     def test_words_follow_the_note_track(self) -> None:
         song = Song(

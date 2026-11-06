@@ -47,7 +47,9 @@ targets are ignored; the model generates a new candidate from the vocal audio.
    note, so quiet words are not dropped. If the denoiser is much sparser than
    the vocal activity, it falls back to the dense teacher chart.
 7. Writes a playable draft map with notes, explicit ribbon links, lyric lines,
-   and note-driven placed words. The web preview draws those ribbon links. For
+   and note-driven placed words. Ribbon links never bridge two lyric words, so a
+   held word stays separate from the next word. The web preview draws those
+   ribbon links. For
    fallback policy maps with public karaoke timing data, a second small network
    calibrates the word times against those public versions. Sunshine uses
    public line-level LRCLIB timing, so only its line placement is calibrated.
