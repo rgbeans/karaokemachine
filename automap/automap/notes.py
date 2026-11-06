@@ -266,14 +266,22 @@ def place_words_from_notes(
     return placed
 
 
-def build_ribbon_links(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_ribbon_links(
+    notes: list[dict[str, Any]],
+    song: Song | None = None,
+) -> list[dict[str, Any]]:
     """Connect adjacent notes that belong to the same sung run.
 
-    Once a map has any explicit link, the stage stops drawing implicit
-    word/line ribbons. The old builder only linked a handful of very tight
-    gaps, which made otherwise continuous phrases look disconnected. Link every
-    adjacent pair that is close enough to be a legato run.
+    A learned ribbon policy is used when a song context is available. It was
+    trained on the explicit connectors in the hand-mapped Man in the Box chart.
+    The gap/pitch rule remains as a fallback for tests and old callers.
     """
+    from .config import RIBBON_MODEL_PATH
+    from .ribbon_model import predict_ribbon_links
+
+    if song is not None and RIBBON_MODEL_PATH.exists():
+        learned = predict_ribbon_links(song, notes)
+        return learned
     links: list[dict[str, Any]] = []
     for index in range(len(notes) - 1):
         current = notes[index]
@@ -316,7 +324,7 @@ def build_map_document(
         "lines": song.lines,
         "placedWords": placed_words,
         "customWords": [],
-        "ribbonLinks": build_ribbon_links(notes),
+        "ribbonLinks": build_ribbon_links(notes, song),
         "wordAlignment": word_alignment,
         "noteAlignment": note_alignment,
         "low": low,

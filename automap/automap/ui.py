@@ -170,11 +170,12 @@ class Session:
             raise RuntimeError("no current generation target")
         path = info.get("installed") or info.get("archive")
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.active_model_path = (
-            TEACHER_MODEL_PATH
-            if document.get("noteAlignment") == "teacher"
-            else MODEL_PATH
-        )
+        if document.get("noteAlignment") == "teacher":
+            from . import teacher as teacher_module
+
+            self.active_model_path = teacher_module.teacher_model_path_for_song(song)
+        else:
+            self.active_model_path = MODEL_PATH
         word_alignment = word_model.alignment_for_song(song.id)
         desired_word_alignment = (
             "calibrated" if word_alignment is not None and WORD_MODEL_PATH.exists() else "lyrics"
@@ -206,7 +207,7 @@ class Session:
                             **(note_source or {}),
                             "label": "USDB CALIBRATED",
                         }
-                        document["ribbonLinks"] = build_ribbon_links(public)
+                        document["ribbonLinks"] = build_ribbon_links(public, song)
                         document["placedWords"] = place_words_from_notes(song, public)
                         document["wordAlignment"] = "notes"
                         needs_words = False

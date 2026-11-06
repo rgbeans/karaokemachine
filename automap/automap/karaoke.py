@@ -16,7 +16,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Union
 
-from .config import CACHE_DIR
+from .config import AUTOMAP_DIR, CACHE_DIR
 from .maps import Song
 
 KARAOKE_CACHE = CACHE_DIR / "karaoke"
@@ -87,9 +87,43 @@ BY_SONG = {source.song_id: source for source in SOURCES}
 BY_INDEX = {index: source for index, source in enumerate(SOURCES)}
 
 # Public note tracks that are useful for teacher supervision even when we have
-# not calibrated their lyric-word timing yet.
-NOTE_SOURCES: tuple[KaraokeSource, ...] = (
+# not calibrated their lyric-word timing yet. The registry is produced by
+# matching the local imports against the public USDB artist index.
+def _load_match_sources() -> tuple[KaraokeSource, ...]:
+    path = AUTOMAP_DIR / "usdb_matches.json"
+    if not path.exists():
+        return ()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as error:
+        print(f"warning: could not read {path}: {error}")
+        return ()
+    sources: list[KaraokeSource] = []
+    for item in payload.get("matches") or []:
+        song_id = str(item.get("song_id") or "").strip()
+        usdb_id = int(item.get("usdb_id") or 0)
+        if not song_id or not usdb_id:
+            continue
+        sources.append(
+            KaraokeSource(
+                song_id=song_id,
+                usdb_id=usdb_id,
+                title=str(item.get("title") or song_id),
+                offset=0.0,
+                note_offset=float(item.get("offset") or 0.0),
+            )
+        )
+    return tuple(sources)
+
+
+_FALLBACK_NOTE_SOURCES: tuple[KaraokeSource, ...] = (
     KaraokeSource("yt-G23iLGhh9lo", 17638, "Nutshell", 0.0, -0.15),
+)
+NOTE_SOURCES: tuple[KaraokeSource, ...] = tuple(
+    {
+        source.song_id: source
+        for source in (*_FALLBACK_NOTE_SOURCES, *_load_match_sources())
+    }.values()
 )
 NOTE_BY_SONG = {
     source.song_id: source for source in (*SOURCES, *NOTE_SOURCES)

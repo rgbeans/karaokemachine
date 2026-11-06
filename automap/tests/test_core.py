@@ -233,6 +233,25 @@ class CoreTests(unittest.TestCase):
         for item in metrics["songs"].values():
             self.assertGreater(item["f1"], item["teacher_f1"])
 
+    def test_usdb_matches_are_loaded(self) -> None:
+        from automap import karaoke
+
+        self.assertGreaterEqual(len(karaoke.NOTE_SOURCES), 15)
+        self.assertIn("yt-G23iLGhh9lo", karaoke.NOTE_BY_SONG)
+        self.assertIn("yt-qgaRVvAKoqQ", karaoke.NOTE_BY_SONG)
+        self.assertLess(
+            karaoke.NOTE_BY_SONG["yt-qgaRVvAKoqQ"].effective_note_offset, 1.0
+        )
+
+    def test_ribbon_policy_metrics_are_present(self) -> None:
+        import json
+
+        from automap.ribbon_model import RIBBON_METRICS_PATH
+
+        metrics = json.loads(RIBBON_METRICS_PATH.read_text(encoding="utf-8"))
+        self.assertGreater(metrics["f1"], 0.5)
+        self.assertGreater(metrics["positive"], 20)
+
     def test_word_features_match_the_model_contract(self) -> None:
         from automap import karaoke, word_model
 

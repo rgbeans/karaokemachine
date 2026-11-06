@@ -102,19 +102,39 @@ cd automap
 ```
 
 Training pairs the teacher chart with the hand-mapped **Man in the Box** chart
-and five public USDB note tracks. The denoiser learns which teacher notes a
-human/public chart keeps, plus small pitch, onset and duration corrections. It
-is saved as `checkpoints/teacher_policy.pt`; the old one-song checkpoint is not
-overwritten.
+and **21 public USDB note tracks** matched across the local imports (AIC,
+Backstreet Boys, Creed, ABBA, Eagles, George Michael, Pearl Jam, Wham!,
+Lynyrd Skynyrd). The registry is `usdb_matches.json`; each match has an
+audio-verified note offset.
+
+Two checkpoints are used:
+
+- `checkpoints/teacher_policy.pt` — broad 21-song USDB model, used for
+  non-AIC artists. Pitch correction is disabled because the teacher already
+  carries the local pitch; only selection and duration are refined.
+- `checkpoints/teacher_policy_aic.pt` — AIC-specialized model, used for
+  Alice in Chains songs without a public note track.
+
+The broad model scores mean F1 **0.498**, median **0.553** across the 21 matched
+note charts. Examples: My Sacrifice 0.694, Man in the Box 0.641, Hotel
+California 0.631, Careless Whisper 0.630, Black 0.623.
+
+AIC specialist (pitch correction disabled):
 
 | Reference chart | Teacher notes | Generated notes | Note F1 | Raw teacher F1 |
 | --- | ---: | ---: | ---: | ---: |
-| Man in the Box | 514 | 154 | **0.769** | 0.375 |
-| Them Bones | 326 | 80 | **0.451** | 0.204 |
-| We Die Young | 304 | 85 | **0.654** | 0.333 |
-| No Excuses | 370 | 129 | **0.427** | 0.240 |
-| Would? | 371 | 121 | **0.599** | 0.336 |
-| Nutshell | 339 | 104 | **0.495** | 0.235 |
+| Man in the Box | 514 | 154 | **0.734** | 0.375 |
+| Them Bones | 326 | 80 | **0.392** | 0.204 |
+| We Die Young | 304 | 85 | **0.625** | 0.333 |
+| No Excuses | 370 | 129 | **0.356** | 0.240 |
+| Would? | 371 | 121 | **0.492** | 0.336 |
+| Nutshell | 339 | 104 | **0.463** | 0.235 |
+
+For the 40 non-USDB local songs that produce notes (Whale & Wasp is
+instrumental), the teacher path produces a median 216 notes and 37 ribbons;
+median exact-pitch agreement with the local vocal is 60.8%, within one semitone
+77.4%, and 89.1% of note onsets land on voiced frames. This is an audio-alignment
+check, not a hand-map ground truth benchmark; those songs still need grading.
 
 ![Generated Man in the Box vs the hand map](docs/mitb-comparison.png)
 
@@ -166,9 +186,8 @@ word-level calibrated song, `LINE TIMING · LRCLIB · N ms` for Sunshine, and
 The calibration sources are listed in `word_offsets.json`; the side-by-side
 public timing pages are linked there.
 
-**Note tracks** for five USDB songs — the four word-calibrated songs plus
-**Nutshell** — are rebuilt from the public UltraStar note lines rather than the
-one-song neural policy. Their note times use the audio-verified note offset, and
+**Note tracks** for the 21 matched USDB songs are rebuilt from the public
+UltraStar note lines rather than the one-song neural policy. Their note times use the audio-verified note offset, and
 each pitch is placed in the octave nearest the local vocal track. The UI labels
 them `NOTES · USDB CALIBRATED`. Sunshine and the other targets use the teacher +
 denoiser track and show `NOTES · TEACHER + DENOISER`. Their words are placed on
@@ -291,6 +310,9 @@ cd automap
 
 # Train the teacher-note denoiser against the hand map and public note tracks.
 .venv/bin/python -m automap train-teacher
+
+# Train the explicit ribbon-link policy from the hand map.
+.venv/bin/python -m automap train-ribbons
 ```
 
 Useful UI options:
@@ -341,9 +363,13 @@ KaraokeMachine editor and submit it like any other map.
 | `automap/word_model.py` | word-timing calibration network |
 | `automap/note_calibration.py` | public note-track rebuilding and octave matching |
 | `automap/teacher.py` | dense melody teacher, note denoiser and word coverage |
+| `automap/ribbon_model.py` | learned explicit ribbon-link policy |
 | `word_metrics.json` | committed calibration metrics and sources |
 | `word_offsets.json` | committed per-song public timing offsets |
-| `teacher_metrics.json` | committed teacher-denoiser metrics |
+| `teacher_metrics.json` | committed broad teacher-denoiser metrics |
+| `teacher_metrics_aic.json` | committed AIC-specialist metrics |
+| `ribbon_metrics.json` | committed ribbon-policy metrics |
+| `usdb_matches.json` | matched local/USDB note sources and offsets |
 | `automap/queue.py` | target queue and persistent progress |
 | `automap/ui.py` | local grading server, dual-audio streaming, queue session |
 | `automap/ui_assets/` | the sidescrolling thumbs-up/down window |
@@ -357,7 +383,7 @@ and never embeds audio in a map.
 
 ## Known limitations
 
-- The teacher denoiser is trained on one hand map plus five public note tracks.
+- The teacher denoiser is trained on one hand map plus 21 public note tracks.
   It generalizes the teacher's melody, but it is not a substitute for a hand
   pass. The grading loop is still how it adapts to the remaining songs.
 - Word timing and public note tracks are calibrated against four USDB karaoke

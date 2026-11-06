@@ -105,4 +105,6 @@ WORD_OFFSETS_PATH = AUTOMAP_DIR / "word_offsets.json"
 # note chart. It is deliberately a separate checkpoint from the live one-song
 # policy.
 TEACHER_MODEL_PATH = CHECKPOINT_DIR / "teacher_policy.pt"
+TEACHER_AIC_MODEL_PATH = CHECKPOINT_DIR / "teacher_policy_aic.pt"
+RIBBON_MODEL_PATH = CHECKPOINT_DIR / "ribbon_policy.pt"
 SUGGESTION_CACHE = CACHE_DIR / "suggestions"

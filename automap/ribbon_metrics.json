@@ -1,0 +1,27 @@
+{
+  "model": "learned adjacent-note ribbon policy",
+  "features": [
+    "gap",
+    "abs_gap",
+    "overlap",
+    "pitch_diff",
+    "prev_duration",
+    "next_duration",
+    "prev_midi_norm",
+    "next_midi_norm",
+    "time_frac",
+    "index_frac",
+    "same_line",
+    "prev_line_pos",
+    "next_line_pos",
+    "gap_under_20ms",
+    "pitch_under_3"
+  ],
+  "threshold": 0.30000000000000004,
+  "f1": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "links": 69,
+  "pairs": 183,
+  "positive": 69
+}

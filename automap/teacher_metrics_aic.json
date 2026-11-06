@@ -1,0 +1,96 @@
+{
+  "model": "teacher-note denoiser (AIC specialist)",
+  "target_density": 0.75,
+  "pitch_correction": false,
+  "features": [
+    "start_frac",
+    "log_duration",
+    "midi_norm",
+    "confidence",
+    "velocity",
+    "rms_mean",
+    "onset_strength",
+    "voiced_ratio",
+    "pitch_std",
+    "pitch_slope",
+    "midi_dev_local",
+    "prev_gap",
+    "next_gap",
+    "prev_pitch_delta",
+    "next_pitch_delta",
+    "run_length",
+    "overlap_prev",
+    "word_dist",
+    "inside_word",
+    "word_len",
+    "line_frac",
+    "line_start_dist",
+    "line_end_dist",
+    "is_word_start",
+    "song_duration",
+    "is_first",
+    "is_last"
+  ],
+  "songs": {
+    "yt-H1i5HaQV9ck": {
+      "title": "Man in the Box",
+      "teacher_notes": 514,
+      "kept": 124,
+      "generated": 154,
+      "precision": 0.8051948051948052,
+      "recall": 0.6739130434782609,
+      "f1": 0.7337278106508877,
+      "teacher_f1": 0.3753581661891117
+    },
+    "yt-zTuD8k3JvxQ": {
+      "title": "Them Bones",
+      "teacher_notes": 326,
+      "kept": 44,
+      "generated": 80,
+      "precision": 0.5,
+      "recall": 0.3225806451612903,
+      "f1": 0.39215686274509803,
+      "teacher_f1": 0.20444444444444443
+    },
+    "yt-6JA25BIxgtk": {
+      "title": "We Die Young",
+      "teacher_notes": 304,
+      "kept": 68,
+      "generated": 85,
+      "precision": 0.7647058823529411,
+      "recall": 0.5284552845528455,
+      "f1": 0.625,
+      "teacher_f1": 0.33255269320843095
+    },
+    "yt-r80HF68KM8g": {
+      "title": "No Excuses",
+      "teacher_notes": 370,
+      "kept": 59,
+      "generated": 129,
+      "precision": 0.4263565891472868,
+      "recall": 0.3055555555555556,
+      "f1": 0.3559870550161813,
+      "teacher_f1": 0.24
+    },
+    "yt-Nco_kh8xJDs": {
+      "title": "Would?",
+      "teacher_notes": 371,
+      "kept": 85,
+      "generated": 121,
+      "precision": 0.6033057851239669,
+      "recall": 0.4147727272727273,
+      "f1": 0.4915824915824916,
+      "teacher_f1": 0.33638025594149906
+    },
+    "yt-G23iLGhh9lo": {
+      "title": "Nutshell",
+      "teacher_notes": 339,
+      "kept": 43,
+      "generated": 104,
+      "precision": 0.4230769230769231,
+      "recall": 0.5116279069767442,
+      "f1": 0.4631578947368421,
+      "teacher_f1": 0.23529411764705882
+    }
+  }
+}

@@ -33,6 +33,7 @@ from .candidates import CandidateSet, label_candidates
 from .config import (
     PROJECT_ROOT,
     SUGGESTION_CACHE,
+    TEACHER_AIC_MODEL_PATH,
     TEACHER_MODEL_PATH,
 )
 from .maps import Level, Song, flatten_words, load_approved_tracks, load_level, load_song
@@ -82,6 +83,7 @@ class TeacherRuntime:
     feature_std: np.ndarray
     metrics: dict[str, Any]
     step: int = 0
+    pitch_correction: bool = True
 
 
 def _suggestion_cache_path(song: Song) -> Path:
@@ -438,7 +440,14 @@ def select_teacher_actions(
             "select_prob": probabilities.cpu().numpy().astype(np.float32),
             "selection_bias": np.array([0.0], dtype=np.float32),
             "selected": selected.cpu().numpy().astype(np.int8),
-            "pitch_offset": output["pitch_offset"][0].cpu().numpy().astype(np.float32),
+            # The teacher already has the local vocal pitch. Let the model
+            # choose notes and timing, but do not let a USDB-trained pitch
+            # correction pull the melody away from the local audio.
+            "pitch_offset": (
+                output["pitch_offset"][0].cpu().numpy().astype(np.float32)
+                if runtime.pitch_correction
+                else np.zeros(len(candidates), dtype=np.float32)
+            ),
             "onset_offset": output["onset_offset"][0].cpu().numpy().astype(np.float32),
             "log_scale": output["log_scale"][0].cpu().numpy().astype(np.float32),
         }
@@ -450,6 +459,7 @@ def train_teacher_model(
     output_path: Path | None = None,
     metrics_path: Path | None = None,
     exclude_song_ids: tuple[str, ...] = (),
+    pitch_correction: bool = True,
 ) -> dict[str, Any]:
     output_path = output_path or TEACHER_MODEL_PATH
     metrics_path = metrics_path or TEACHER_METRICS_PATH
@@ -557,6 +567,7 @@ def train_teacher_model(
         feature_std=std,
         metrics={},
         step=0,
+        pitch_correction=pitch_correction,
     )
     metrics: dict[str, Any] = {
         "model": "teacher-note denoiser",
@@ -602,6 +613,7 @@ def train_teacher_model(
             "feature_names": list(TEACHER_FEATURE_NAMES),
             "metrics": metrics,
             "step": 0,
+            "pitch_correction": pitch_correction,
         },
         output_path,
     )
@@ -637,6 +649,7 @@ def load_teacher_model(model_path: Path | None = None) -> TeacherRuntime | None:
             feature_std=std,
             metrics=payload.get("metrics") or {},
             step=int(payload.get("step", 0)),
+            pitch_correction=bool(payload.get("pitch_correction", True)),
         )
     except Exception as error:
         print(f"warning: could not load teacher model: {error}")
@@ -721,13 +734,20 @@ def ensure_word_coverage(
     return cleaned
 
 
+def teacher_model_path_for_song(song: Song) -> Path:
+    """Use the AIC-specialized denoiser for Alice in Chains, broad USDB for others."""
+    if "aliceinchains" in karaoke.normalize(song.artist) and TEACHER_AIC_MODEL_PATH.exists():
+        return TEACHER_AIC_MODEL_PATH
+    return TEACHER_MODEL_PATH
+
+
 def generate_teacher_notes(
     song: Song,
     audio: dict[str, Any],
     seed: int | None = None,
     model_path: Path | None = None,
 ) -> tuple[list[dict[str, Any]], CandidateSet, dict[str, np.ndarray], TeacherRuntime] | None:
-    runtime = load_teacher_model(model_path)
+    runtime = load_teacher_model(model_path or teacher_model_path_for_song(song))
     if runtime is None:
         return None
     suggestions = load_or_build_suggestions(song)
