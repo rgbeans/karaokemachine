@@ -1,6 +1,7 @@
 {
-  "note": "Generation targets only. Training data is approved.json. Man in the Box is excluded because it already has a finished map.",
+  "note": "Generation targets only. Training data is approved.json. Songs with finished maps (Man in the Box and Sunshine) are excluded.",
   "never_generate": [
+    "yt-2maHkdezdEc",
     "yt-H1i5HaQV9ck"
   ],
   "albums": [
@@ -97,11 +98,6 @@
     {
       "song_id": "yt-iTOZ4snT7Sg",
       "title": "It Ain't Like That",
-      "album": "Facelift"
-    },
-    {
-      "song_id": "yt-2maHkdezdEc",
-      "title": "Sunshine",
       "album": "Facelift"
     },
     {

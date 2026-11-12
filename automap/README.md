@@ -17,18 +17,19 @@ KaraokeMachine.
 documented below. No draft map is ever read as a teacher chart, training label,
 or generation seed; teacher charts are regenerated from the vocal stem.
 
-The allowlist contains exactly one finished map:
+The allowlist contains two finished maps:
 
 - **Man in the Box** — Alice in Chains — `yt-H1i5HaQV9ck/maps/Legacy.json`
+- **Sunshine** — Alice in Chains — `yt-2maHkdezdEc/maps/handmadebyme.json`
 
 Salve Regina, Tequila, and every draft map are **not** used as note-policy
 training data. The loader rejects drafts and never auto-scans the library for
 training data. Public karaoke timing pages and LRCLIB synced lyric lines are
 separate calibration inputs; they are not maps and do not promote a draft.
 
-**Generation targets:** [`targets.json`](targets.json) lists the other 30 Alice
-in Chains songs from Dirt, Facelift, and Jar of Flies. Man in the Box is
-explicitly excluded because it already has a finished map. Draft maps on those
+**Generation targets:** [`targets.json`](targets.json) lists the other 29 Alice
+in Chains songs from Dirt, Facelift, and Jar of Flies. Man in the Box and
+Sunshine are explicitly excluded because they already have finished maps. Draft maps on those
 targets are ignored; the model generates a new candidate from the vocal audio.
 
 ## What it does
@@ -108,34 +109,35 @@ cd automap
 .venv/bin/python -m automap train-teacher
 ```
 
-Training pairs the teacher chart with the hand-mapped **Man in the Box** chart
-and **21 public USDB note tracks** matched across the local imports (AIC,
+Training pairs the teacher chart with the hand-mapped **Man in the Box** and
+**Sunshine** charts plus **21 public USDB note tracks** matched across the local imports (AIC,
 Backstreet Boys, Creed, ABBA, Eagles, George Michael, Pearl Jam, Wham!,
 Lynyrd Skynyrd). The registry is `usdb_matches.json`; each match has an
 audio-verified note offset.
 
 Two checkpoints are used:
 
-- `checkpoints/teacher_policy.pt` — broad 21-song USDB model, used for
+- `checkpoints/teacher_policy.pt` — broad 22-song model, used for
   non-AIC artists. Pitch correction is disabled because the teacher already
   carries the local pitch; only selection and duration are refined.
 - `checkpoints/teacher_policy_aic.pt` — AIC-specialized model, used for
   Alice in Chains songs without a public note track.
 
-The raw-feature broad model scores mean F1 **0.516**, median **0.545** across the
-21 matched note charts. Examples: Quit Playing Games 0.726, I Want It That Way
-0.697, Careless Whisper 0.679, My Sacrifice 0.664, One Last Breath 0.632.
+The raw-feature broad model scores mean F1 **0.489**, median **0.548** across the
+22 charts. Examples: Quit Playing Games 0.644, Careless Whisper 0.633, My
+Sacrifice 0.671, I Want It That Way 0.617, Black 0.596.
 
 AIC specialist (pitch correction disabled):
 
 | Reference chart | Teacher notes | Generated notes | Note F1 | Raw teacher F1 |
 | --- | ---: | ---: | ---: | ---: |
-| Man in the Box | 514 | 257 | **0.599** | 0.375 |
-| Them Bones | 326 | 138 | **0.351** | 0.204 |
-| We Die Young | 304 | 138 | **0.544** | 0.333 |
-| No Excuses | 370 | 228 | **0.363** | 0.240 |
-| Would? | 371 | 187 | **0.545** | 0.336 |
-| Nutshell | 339 | 231 | **0.315** | 0.235 |
+| Man in the Box | 514 | 214 | **0.633** | 0.375 |
+| Sunshine | 474 | 214 | **0.576** | 0.376 |
+| Them Bones | 326 | 115 | **0.335** | 0.204 |
+| We Die Young | 304 | 115 | **0.555** | 0.333 |
+| No Excuses | 370 | 190 | **0.346** | 0.240 |
+| Would? | 371 | 156 | **0.470** | 0.336 |
+| Nutshell | 339 | 193 | **0.351** | 0.235 |
 
 For the 40 non-USDB local songs that produce notes (Whale & Wasp is
 instrumental), the teacher path produces a median 216 notes and 37 ribbons;
@@ -237,7 +239,7 @@ The top-right **POLICY NET** panel shows the live policy network, model step,
 last loss and the normalized weight delta after a grade. A grade pulses the
 network, highlights changed nodes in gold, and increments the `take N` counter.
 
-A **SONG** picker above the preview lists all 30 targets grouped by album.
+A **SONG** picker above the preview lists all 29 targets grouped by album.
 Songs with an ungraded candidate are marked **pending**; choosing one resumes
 that candidate instead of throwing it away.
 
@@ -375,7 +377,7 @@ KaraokeMachine editor and submit it like any other map.
 | Path | Purpose |
 | --- | --- |
 | `approved.json` | the only training allowlist |
-| `targets.json` | the 30-song generation queue |
+| `targets.json` | the 29-song generation queue |
 | `automap/audio.py` | ffmpeg decode, YIN pitch, RMS and onset analysis |
 | `automap/candidates.py` | onset proposals and approved-map labels |
 | `automap/model.py` | neural policy |

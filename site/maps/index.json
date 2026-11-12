@@ -44,6 +44,27 @@
       ]
     },
     {
+      "id": "yt-2maHkdezdEc",
+      "title": "Sunshine",
+      "artist": "Alice in Chains",
+      "album": "Facelift",
+      "releaseDate": "",
+      "duration": 285.71,
+      "sourceUrl": "https://www.youtube.com/watch?v=2maHkdezdEc",
+      "noAudio": false,
+      "file": "sunshine-alice-in-chains-yt-2maHkdezdEc.json",
+      "cover": "covers/yt-2maHkdezdEc.jpg",
+      "notes": 206,
+      "lyrics": 36,
+      "contributor": "rgbeans",
+      "tags": [
+        "Imported",
+        "AI split",
+        "Handmade",
+        "Mapped"
+      ]
+    },
+    {
       "id": "yt-5f779b972f9",
       "title": "Tequila",
       "artist": "The Champs",

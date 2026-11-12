@@ -114,9 +114,19 @@ class CoreTests(unittest.TestCase):
 
         payload = json.loads(TARGETS_PATH.read_text(encoding="utf-8"))
         ids = {track["song_id"] for track in payload["tracks"]}
-        self.assertEqual(len(ids), 30)
+        self.assertEqual(len(ids), 29)
         self.assertNotIn("yt-H1i5HaQV9ck", ids)
+        self.assertNotIn("yt-2maHkdezdEc", ids)
         self.assertEqual(set(payload["albums"]), {"Dirt", "Facelift", "Jar of Flies"})
+
+    def test_sunshine_handmade_map_is_approved(self) -> None:
+        from automap.maps import load_approved_tracks, load_level
+
+        tracks = {track.song_id: track for track in load_approved_tracks()}
+        self.assertIn("yt-2maHkdezdEc", tracks)
+        level = load_level("yt-2maHkdezdEc", tracks["yt-2maHkdezdEc"].map_relative)
+        self.assertGreater(len(level.notes), 100)
+        self.assertGreater(len(level.ribbon_links), 20)
 
     def test_word_calibration_metrics_are_present(self) -> None:
         import json
